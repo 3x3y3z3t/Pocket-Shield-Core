@@ -1,12 +1,8 @@
 ﻿// ;
-using ExShared;
 using Sandbox.ModAPI;
 using System;
-using System.Collections.Generic;
 using System.Text;
-using VRage.Game;
-using VRage.Game.Components;
-using VRageMath;
+using VRage.Utils;
 
 namespace PocketShieldCore
 {
@@ -22,43 +18,37 @@ namespace PocketShieldCore
             try
             {
                 string decodedPackage = Encoding.Unicode.GetString(_package);
-                //m_Logger.WriteLine("  _handlerId = " + _handlerId + ", _package = " + decodedPackage + ", _senderPlayerId = " + _senderPlayerId + ", _sentMsg = " + _sentMsg, 5);
-                m_Logger.WriteLine("  Recieved message from <" + _senderPlayerId + ">: " + decodedPackage, 5);
+                //m_Logger.WriteLine("  _handlerId = " + _handlerId + ", _senderPlayerId = " + _senderPlayerId + ", _sentMsg = " + _sentMsg, 5);
+                m_Logger.WriteLine("  Recieved message from <" + _senderPlayerId + ">", 5);
 
-                SyncObject obj = MyAPIGateway.Utilities.SerializeFromXML<SyncObject>(decodedPackage);
+                Packet_ShieldData packet = MyAPIGateway.Utilities.SerializeFromBinary<Packet_ShieldData>(_package);
 
-                if (obj.m_OthersShieldData != null && obj.m_OthersShieldData.Count > 0)
+                if (packet.PlayerSteamUserId != MyAPIGateway.Session.Player.SteamUserId)
                 {
-                    foreach (var data in obj.m_OthersShieldData)
+                    m_Logger.WriteLine("  Data is for player <" + packet.PlayerSteamUserId + ">, not me", 4);
+                    return;
+                }
+
+                if (packet.OtherShieldData != null)
+                {
+                    foreach (var data in packet.OtherShieldData)
                     {
-                        data.ShouldPlaySound = true;
                         Sync_AddOrUpdateData(data);
                     }
                 }
-                
-                if (obj.m_MyShieldData != null)
+
+                if (packet.MyShieldData != null && packet.MyShieldData.HasShield)
                 {
-                    if (obj.m_MyShieldData.PlayerSteamUserId == MyAPIGateway.Session.Player.SteamUserId)
-                    {
-                        if (obj.HasShield)
-                        {
-                            //m_ShieldData = obj.m_MyShieldData;
-                            m_ShieldData.CopyFrom(obj.m_MyShieldData);
-                        }
-                        else
-                        {
-                            m_ShieldData.Clear(true);
-                        }
-                        if (m_ShieldHudPanel != null)
-                            m_ShieldHudPanel.RequireUpdate = true;
-                        
-                        m_Logger.WriteLine("  Shield Data updated", 4);
-                    }
-                    else
-                    {
-                        m_Logger.WriteLine("  Data is for player <" + m_ShieldData.PlayerSteamUserId + ">, not me", 4);
-                    }
+                    Sync_CopyShieldDataFrom(packet.MyShieldData);
                 }
+                else
+                {
+                    Sync_ClearShieldData();
+                }
+                m_Logger.WriteLine("  Shield Data updated", 4);
+
+                if (m_ShieldHudPanel != null)
+                    m_ShieldHudPanel.RequireUpdate = true;
             }
             catch (Exception _e)
             {
@@ -82,6 +72,25 @@ namespace PocketShieldCore
             m_DrawList.Add(_data);
         }
 
+        private void Sync_ClearShieldData()
+        {
+            m_ShieldData.SubtypeId = MyStringHash.NullOrEmpty;
+            m_ShieldData.Energy = 0.0f;
+            m_ShieldData.MaxEnergy = 0.0f;
+            m_ShieldData.OverchargeRemainingPercent = 0.0f;
+            m_ShieldData.DefResList.Clear();
+        }
 
+        private void Sync_CopyShieldDataFrom(MyShieldData _other)
+        {
+            m_ShieldData.SubtypeId = _other.SubtypeId;
+            m_ShieldData.Energy = _other.Energy;
+            m_ShieldData.MaxEnergy = _other.MaxEnergy;
+            m_ShieldData.OverchargeRemainingPercent = _other.OverchargeRemainingPercent;
+            if (_other.DefResList == null)
+                m_ShieldData.DefResList.Clear();
+            else
+                m_ShieldData.DefResList = _other.DefResList;
+        }
     }
 }

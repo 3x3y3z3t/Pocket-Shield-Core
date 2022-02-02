@@ -3,8 +3,10 @@ using Draygo.API;
 using ExShared;
 using Sandbox.ModAPI;
 using System;
+using System.Collections.Generic;
 using VRage.Game;
 using VRage.Game.Components;
+using VRage.Utils;
 using VRageMath;
 
 namespace PocketShieldCore
@@ -31,7 +33,7 @@ namespace PocketShieldCore
         private ShieldHudPanel m_ShieldHudPanel = null;
         private HudAPIv2 m_TextHudAPI = null;
 
-        private MyShieldData m_ShieldData = new MyShieldData();
+        private MyShieldData m_ShieldData = new MyShieldData() { DefResList = new Dictionary<MyStringHash, DefResPair>(MyStringHash.Comparer) };
 
         public override void LoadData()
         {
@@ -81,7 +83,7 @@ namespace PocketShieldCore
                 return;
 
             m_TextHudAPI = new HudAPIv2(InitTextHudCallback);
-            ShieldHudPanel.Debug = true;
+            ShieldHudPanel.Debug = false;
             //ApiBackend_LogRegisteredMod();
 
             m_Logger.WriteLine("  IsServer = " + IsServer);
@@ -117,7 +119,14 @@ namespace PocketShieldCore
                 if (m_ShieldHudPanel != null)
                 {
                     m_ShieldHudPanel.CacheIconLists();
+
+                    // HACK!;
+                    s_CachedPanelPositionItemSize.X = m_ShieldHudPanel.PanelSize.X;
+                    s_CachedPanelPositionItemSize.Y = m_ShieldHudPanel.PanelSize.Y;
+                    if (m_PanelPositionItem != null)
+                        m_PanelPositionItem.Size = PanelPositionItemSize;
                 }
+                
             }
 
             UpdateHitEffectDuration(1);
@@ -174,6 +183,7 @@ namespace PocketShieldCore
             UpdateHudConfigs();
 
             m_ShieldHudPanel = new ShieldHudPanel(m_ShieldData, m_Config, m_Logger);
+            m_ShieldHudPanel.CacheIconLists();
             UpdatePanelConfig();
 
             ModSettings_InitMenu();
@@ -193,7 +203,7 @@ namespace PocketShieldCore
 
         private void UpdateFakeShieldStat()
         {
-            if (m_ShieldData.PlayerSteamUserId == 0U)
+            if (!m_ShieldData.HasShield)
                 return;
 
             // TODO: update fake shield stat;

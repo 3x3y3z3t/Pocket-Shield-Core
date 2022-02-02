@@ -19,7 +19,7 @@ namespace PocketShieldCore
             string msg = _payload as string;
             if (msg != null)
             {
-                m_Logger.WriteLine("msg = " + msg, 4);
+                m_Logger.WriteLine("msg = " + msg, 0);
                 if (msg.StartsWith(PocketShieldAPI.STR_REGISTER_MOD))
                 {
                     int pos = msg.IndexOf('=');
@@ -38,6 +38,7 @@ namespace PocketShieldCore
                 else if (msg.StartsWith(PocketShieldAPI.STR_UNREGISTER_MOD))
                 {
                     string modinfo = msg.Substring(PocketShieldAPI.STR_UNREGISTER_MOD.Length + 1);
+                    m_Logger.WriteLine("modinfo = " + modinfo);
                     m_ApiBackend_RegisteredMod.Remove(modinfo);
                     m_Logger.WriteLine("UnRegistering mod " + modinfo + "..", 0);
                 }

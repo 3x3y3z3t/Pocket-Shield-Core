@@ -9,6 +9,7 @@ using VRage.Utils;
 using VRage.Game;
 using ExShared;
 using VRage.Game.Entity;
+using VRageMath;
 
 namespace PocketShieldCore
 {
@@ -30,6 +31,7 @@ namespace PocketShieldCore
         private ulong m_SyncSaved = 0;
 
         private List<IMyPlayer> m_Players = new List<IMyPlayer>();
+        private Dictionary<ulong, Vector3D> m_PlayersPosition = new Dictionary<ulong, Vector3D>();
 
         private Dictionary<long, ShieldEmitter> m_PlayerShieldEmitters = new Dictionary<long, ShieldEmitter>(); // TODO: maybe use ulong;
         private Dictionary<long, ShieldEmitter> m_NpcShieldEmitters = new Dictionary<long, ShieldEmitter>();
@@ -134,7 +136,8 @@ namespace PocketShieldCore
                     m_IsFirstTick = false;
                 }
 
-                UpdatePlayerList();
+                UpdatePlayersList();
+                CachePlayersPosition();
                 Sync_SyncDataToPlayers();
 
                 UpdateSaveData();
@@ -161,49 +164,6 @@ namespace PocketShieldCore
         public override void SaveData()
         {
             m_SaveData.SaveData();
-        }
-
-        private void UpdatePlayerList()
-        {
-            m_Players.Clear();
-            MyAPIGateway.Players.GetPlayers(m_Players);
-        }
-
-        private void UpdateSaveData()
-        {
-            foreach (long key in m_PlayerShieldEmitters.Keys)
-                m_SaveData.UpdatePlayerData(key, m_PlayerShieldEmitters[key].Energy);
-
-            foreach (long key in m_NpcShieldEmitters.Keys)
-                m_SaveData.UpdateNpcData(key, m_NpcShieldEmitters[key].Energy);
-        }
-
-        private IMyPlayer GetPlayer(IMyCharacter _character)
-        {
-            if (_character == null)
-                return null;
-
-            if (m_Players.Count == 0)
-                UpdatePlayerList();
-
-            foreach (IMyPlayer player in m_Players)
-            {
-                if (player.Character == null)
-                    continue;
-                if (player.Character.EntityId == _character.EntityId)
-                    return player;
-            }
-
-            return null;
-        }
-
-        private ulong GetPlayerSteamUid(IMyCharacter _character)
-        {
-            IMyPlayer player = GetPlayer(_character);
-            if (player == null)
-                return 0U;
-
-            return player.SteamUserId;
         }
 
         private void Entities_OnEntityAdd(VRage.ModAPI.IMyEntity _entity)
@@ -339,7 +299,60 @@ namespace PocketShieldCore
             _damageInfo.Amount = 0;
             m_DamageQueue.Remove(_damageInfo.GetHashCode());
         }
-        
+
+        private void UpdatePlayersList()
+        {
+            m_Players.Clear();
+            MyAPIGateway.Players.GetPlayers(m_Players);
+        }
+
+        private void CachePlayersPosition()
+        {
+            m_PlayersPosition.Clear();
+            foreach (var player in m_Players)
+            {
+                if (player.Character != null)
+                    m_PlayersPosition[player.SteamUserId] = player.Character.WorldVolume.Center;
+            }
+        }
+
+        private void UpdateSaveData()
+        {
+            foreach (long key in m_PlayerShieldEmitters.Keys)
+                m_SaveData.UpdatePlayerData(key, m_PlayerShieldEmitters[key].Energy);
+
+            foreach (long key in m_NpcShieldEmitters.Keys)
+                m_SaveData.UpdateNpcData(key, m_NpcShieldEmitters[key].Energy);
+        }
+
+        private IMyPlayer GetPlayer(IMyCharacter _character)
+        {
+            if (_character == null)
+                return null;
+
+            if (m_Players.Count == 0)
+                UpdatePlayersList();
+
+            foreach (IMyPlayer player in m_Players)
+            {
+                if (player.Character == null)
+                    continue;
+                if (player.Character.EntityId == _character.EntityId)
+                    return player;
+            }
+
+            return null;
+        }
+
+        private ulong GetPlayerSteamUid(IMyCharacter _character)
+        {
+            IMyPlayer player = GetPlayer(_character);
+            if (player == null)
+                return 0U;
+
+            return player.SteamUserId;
+        }
+
 
     }
 }

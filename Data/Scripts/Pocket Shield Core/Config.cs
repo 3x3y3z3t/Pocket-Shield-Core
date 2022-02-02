@@ -39,8 +39,7 @@ namespace PocketShieldCore
         public const bool SHOW_PANEL_BG = true;
 
         public const float PANEL_POS_X = 20.0f;
-        public const float PANEL_POS_Y = 735.0f;
-        public const float PANEL_WIDTH = 265.0f;
+        public const float PANEL_POS_Y = 785.0f;
 
         public const float PANEL_BASE_WIDTH = 265.0f;
         public const float PANEL_BASE_HEIGHT = 265.0f;
@@ -62,10 +61,10 @@ namespace PocketShieldCore
         public const int HIT_EFFECT_LIVE_TICKS = 20;
         public const double HIT_EFFECT_SYNC_DISTANCE = 2000.0;
         public const int ICON_ATLAS_W = 4;
-        public const int ICON_ATLAS_H = 4;
+        public const int ICON_ATLAS_H = 1;
 
         public const int ICON_BLANK = 0;
-        public const int ICON_SHIELD_0 = 1;
+        public const int ICON_SHIELD_0 = 2;
 
         public const float ICON_ATLAS_UV_SIZE_X = 1.0f / ICON_ATLAS_W;
         public const float ICON_ATLAS_UV_SIZE_Y = 1.0f / ICON_ATLAS_H;
@@ -170,7 +169,7 @@ namespace PocketShieldCore
             _iniData.Set(c_SectionCommon, c_NameShieldUpdateInterval, ShieldUpdateInterval);
 
             _iniData.Set(c_SectionMisc, c_NameSuppressAllShieldLog, SuppressAllShieldLog);
-            _iniData.Set(c_SectionMisc, c_NameNpcInvOpOnDeath, nameof(NpcInventoryOperationOnDeath));
+            _iniData.Set(c_SectionMisc, c_NameNpcInvOpOnDeath, NpcInventoryOperationOnDeath.ToString());
             _iniData.Set(c_SectionMisc, c_NameNpcShieldItemToCreditRatio, NpcShieldItemToCreditRatio);
 
             _iniData.SetComment(c_SectionCommon, c_NameShieldUpdateInterval, c_CommentShieldUpdateInterval);

@@ -4,6 +4,7 @@ using Sandbox.Game;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using VRage;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
@@ -27,20 +28,26 @@ namespace PocketShieldCore
     //    BasicEmitter = 1,
     //    AdvancedEmitter = 2,
     //}
-    
+    [ProtoBuf.ProtoContract]
+    public struct DefResPair
+    {
+        public bool IsZero { get { return Def == 0.0f && Res == 0.0f; } }
+
+        [ProtoBuf.ProtoMember(1)] public float Def;
+        [ProtoBuf.ProtoMember(2)] public float Res;
+    }
     
     public class ShieldEmitter
     {
         internal static Dictionary<MyStringHash, float> s_PluginBonusModifiers = new Dictionary<MyStringHash, float>();
 
-        public bool RequireSync { get; set; }
         public float ShieldEnergyPercent { get { return Energy / MaxEnergy; } }
         public bool IsOverchargeActive { get { return m_OverchargeRemainingTicks > 0; } }
         public float OverchargeRemainingPercent { get { return m_OverchargeRemainingTicks / (OverchargeDuration * 60.0f); } }
 
+        public bool RequireSync { get; set; } = true;
 
-        public float Energy { get; set; }
-        
+        public float Energy { get; set; } = 0.0f;
         public int PluginsCount { get; private set; }
         public float MaxEnergy { get; private set; }
         public float ChargeRate { get; private set; } // unit: energy per second;
@@ -49,13 +56,12 @@ namespace PocketShieldCore
         public float OverchargeDefBonus { get; private set; }
         public float OverchargeResBonus { get; private set; }
         public double PowerConsumption { get; private set; } // unit: 100% per second;
-        public List<MyTuple<MyStringHash, float>> DefList { get; private set; }
-        public List<MyTuple<MyStringHash, float>> ResList { get; private set; }
-        
+        public Dictionary<MyStringHash, DefResPair> DefResList { get; private set; } = new Dictionary<MyStringHash, DefResPair>();
+
         public IMyCharacter Character { get; private set; }
         public MyStringHash SubtypeId { get; protected set; }
 
-        public float MaxEnergyBonusPercent { get; private set; }
+        public float MaxEnergyBonusPercent { get; private set; } = 0.0f;
 
 
 
@@ -81,6 +87,8 @@ namespace PocketShieldCore
         protected Dictionary<MyStringHash, float> m_BaseRes = new Dictionary<MyStringHash, float>();
         private Dictionary<MyStringHash, uint> m_Plugins = new Dictionary<MyStringHash, uint>();
 
+        private HashSet<MyStringHash> m_CachedDamageType = new HashSet<MyStringHash>(MyStringHash.Comparer);
+
         private Logger m_Logger = null;
         
         protected static VRage.Game.MyDefinitionId s_PoweKitDefinitionID;
@@ -96,10 +104,7 @@ namespace PocketShieldCore
         {
             Character = _character;
             m_Logger = _logger;
-
-            DefList = new List<MyTuple<MyStringHash, float>>();
-            ResList = new List<MyTuple<MyStringHash, float>>();
-            
+                        
             string logString = ">> Character [" + Utils.GetCharacterName(_character) + "] <" + _character.EntityId + ">";
             if (string.IsNullOrEmpty(_character.DisplayName))
                 logString += " (Npc)";
@@ -127,10 +132,7 @@ namespace PocketShieldCore
 
             InitBaseValue();
             ConstructDefResList();
-
-            Energy = 0.0f;
-            MaxEnergyBonusPercent = 0.0f;
-
+            
             logString = "\n";
             logString += "  SubtypuId = " + SubtypeId + "\n";
             logString += "  m_MaxPluginsCount = " + m_MaxPluginsCount + "\n";
@@ -150,8 +152,7 @@ namespace PocketShieldCore
                 logString += "  m_BaseRes[" + key.String + "] = " + m_BaseRes[key] + "\n";
             }
             m_Logger.WriteLine(logString, 2);
-
-            RequireSync = true;
+            
         }
         
         public void Update(int _ticks)
@@ -376,18 +377,37 @@ namespace PocketShieldCore
             }
 
         }
-        
+
         private void ConstructDefResList()
         {
+            DefResList.Clear();
+            
+            foreach (var key in m_Def.Keys)
             {
-                DefList.Clear();
-                ResList.Clear();
+                if (DefResList.ContainsKey(key))
+                {
+                    var pair = DefResList[key];
+                    pair.Def = m_Def[key];
+                    DefResList[key] = pair;
+                }
+                else
+                {
+                    DefResList[key] = new DefResPair() { Def = m_Def[key] };
+                }
+            }
 
-                foreach (var def in m_Def)
-                    DefList.Add(new MyTuple<MyStringHash, float>(def.Key, def.Value));
-
-                foreach (var res in m_Res)
-                    ResList.Add(new MyTuple<MyStringHash, float>(res.Key, res.Value));
+            foreach (var key in m_Res.Keys)
+            {
+                if (DefResList.ContainsKey(key))
+                {
+                    var pair = DefResList[key];
+                    pair.Res = m_Res[key];
+                    DefResList[key] = pair;
+                }
+                else
+                {
+                    DefResList[key] = new DefResPair() { Res = m_Res[key] };
+                }
             }
         }
 

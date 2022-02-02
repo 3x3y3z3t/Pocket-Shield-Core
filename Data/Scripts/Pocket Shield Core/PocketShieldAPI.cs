@@ -1,4 +1,50 @@
-﻿// ;
+﻿/** Pocket Shield Core API v1
+ * 
+ * ==============================
+ * Quick Modding Guide
+ * ==============================
+ * 
+ * To register your mod with Pocket Shield Core, follow these steps:
+ * 
+ * 1. Grab one of the API files and put it in your mod (you are looking at one of those).
+ * 2. Call API init somewhere in your Session Component:
+ * 
+ *                  PocketShieldAPI.Init("Your Mod Name");
+ * 
+ * 3. Call API shutdown in UnloadData:
+ * 
+ *                  PocketShieldAPI.Close();
+ * 
+ * 
+ * ==============================
+ * Optional
+ * ==============================
+ * 
+ * 1. Call          PocketShieldAPI.RegisterCompileEmitterPropertiesCallback(callback);
+ * 
+ * to register a callback for using when creating Shield Emitter item. 
+ * Your callback will be called, and a Shield Emitter item will be created or not 
+ * depends on what your callback will return. Remember to UnRegister it when mod unload.
+ * 
+ * 2. Call          PocketShieldAPI.SetPluginModifier(pluginSubtypeId, modAmount);
+ * 
+ * to set modifier amount for a Plugin item. Value can be overwritten.
+ * 
+ * 3. Call          PocketShieldAPI.RegisterShieldIcon(ShieldIconDrawInfo);
+ * 
+ * to set custom *shield* icon on HUD Panel. Texture atlas supported.
+ * 
+ * 4. Call          PocketShieldAPI.RegisterStatIcons(ItemCardDrawInfo);
+ * 
+ * to set custom pair of *defense-resistance stat* icons on HUD Panel. 
+ * I call it a *DefRes Pair*, they always comes in pair of two icons 
+ * (Def on the left, Res on the right). Texture atlas supported.
+ * 
+ * 
+ * You can take a look at full documentation here:
+ * 
+ */
+
 using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
@@ -6,7 +52,6 @@ using System.Collections.Immutable;
 using VRage;
 using VRage.Utils;
 using VRageMath;
-
 
 namespace PocketShieldCore
 {
@@ -344,7 +389,7 @@ namespace PocketShieldCore
 
 
         #region Internal Stuff
-        public const long MOD_ID = 2656470280L;
+        public const long MOD_ID = 2739353433L;
 
         public const string STR_API_VERSION = "Ver1";
         public const string STR_REGISTER_MOD = "RegMod";
@@ -429,6 +474,8 @@ namespace PocketShieldCore
             s_Instance.m_IsServerReady = false;
             s_Instance.m_IsClientReady = false;
 
+            s_Instance = null;
+
             return true;
         }
 
@@ -465,17 +512,6 @@ namespace PocketShieldCore
             return true;
         }
 
-        public static void SetPluginModifier(MyStringHash _subtypeId, float _value)
-        {
-            if (!ServerReady)
-            {
-                LastErrorMessage = "PocketShield API is not initialized";
-                return;
-            }
-
-            s_Instance.m_PluginBonusModifiers[_subtypeId] = _value;
-        }
-
         public static float GetPluginModifier(MyStringHash _subtypeId)
         {
             if (!ServerReady)
@@ -488,6 +524,17 @@ namespace PocketShieldCore
                 return s_Instance.m_PluginBonusModifiers[_subtypeId];
 
             return 0.0f;
+        }
+
+        public static void SetPluginModifier(MyStringHash _subtypeId, float _value)
+        {
+            if (!ServerReady)
+            {
+                LastErrorMessage = "PocketShield API is not initialized";
+                return;
+            }
+
+            s_Instance.m_PluginBonusModifiers[_subtypeId] = _value;
         }
         #endregion
 

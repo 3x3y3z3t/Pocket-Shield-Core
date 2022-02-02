@@ -33,25 +33,25 @@ namespace PocketShieldCore
 
             IMyEntity targetEntity = null;
 
-            m_DrawList.Clear();
-            m_DrawList.Add(new OtherCharacterShieldData()
-            {
-                EntityId = MyAPIGateway.Session.Player.Character.EntityId,
-                ShieldAmountPercent = 0.9f,
-                Ticks = 5
-            });
+            //m_DrawList.Clear();
+            //m_DrawList.Add(new OtherCharacterShieldData()
+            //{
+            //    EntityId = MyAPIGateway.Session.Player.Character.EntityId,
+            //    ShieldAmountPercent = 0.9f,
+            //    Ticks = 5
+            //});
 
-            targetEntity = MyAPIGateway.Entities.GetEntity((IMyEntity _ent) => { return _ent.Name == "HELPME"; });
-            if (targetEntity != null)
-            {
-                m_DrawList.Add(new OtherCharacterShieldData()
-                {
-                    EntityId = targetEntity.EntityId,
-                    ShieldAmountPercent = 0.2f,
-                    Ticks = 8
-                });
-            }
-            targetEntity = null;
+            //targetEntity = MyAPIGateway.Entities.GetEntity((IMyEntity _ent) => { return _ent.Name == "HELPME"; });
+            //if (targetEntity != null)
+            //{
+            //    m_DrawList.Add(new OtherCharacterShieldData()
+            //    {
+            //        EntityId = targetEntity.EntityId,
+            //        ShieldAmountPercent = 0.2f,
+            //        Ticks = 8
+            //    });
+            //}
+            //targetEntity = null;
 
             Color drawColor = Color.White;
             

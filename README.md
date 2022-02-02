@@ -10,10 +10,10 @@ Any characters (Enginners, Wolves, Spiders, AI Enabled Bots, ...) can benefit fr
 This mod doean't actually add any item in game. It acts as a framework to handle logic for personal shield. You will have to provide it with needed data to create your own items.\
 Example mod can be found [here (Pocket Shield)](https://github.com/3x3y3z3t/Pocket-Shield/tree/v3).
 
-Here is [Pocket Shield Core on Steam](https://steamcommunity.com/sharedfiles/filedetails/?id=2656470280).
+Here is [Pocket Shield Core on Steam](https://steamcommunity.com/sharedfiles/filedetails/?id=2739353433).
 
 # Notes
 - **This mod may break your server**. I don't play MP so I can not test for bugs on MP/DS. Many thanks if you sacrifice your server and report me MP/DS bugs (I may not be able to fix them though).
 
 # Version
-Current version: v1.1.0
+Current version: v1.2.4

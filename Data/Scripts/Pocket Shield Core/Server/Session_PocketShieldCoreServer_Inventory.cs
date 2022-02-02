@@ -1,5 +1,4 @@
 ﻿// ;
-using ExShared;
 using Sandbox.Game;
 using System.Collections.Generic;
 using VRage.Game;
@@ -184,7 +183,7 @@ namespace PocketShieldCore
         private void Inventory_UpdatePlayerCharacterInventoryOnceBeforeSim()
         {
             m_Logger.WriteLine(">> UpdatePlayerCharacterInventoryOnceBeforeSim()..", 4);
-            UpdatePlayerList();
+            UpdatePlayersList();
             foreach (IMyPlayer player in m_Players)
             {
                 m_Logger.WriteLine(">>   Updating player " + player.SteamUserId, 4);

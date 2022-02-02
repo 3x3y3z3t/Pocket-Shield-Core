@@ -60,10 +60,18 @@ namespace PocketShieldCore
                 return "0%";
             if (_percent == 1.0f)
                 return "100%";
-            if (_percent < 0.001f)
+            if (_percent == -1.0f)
+                return "-100%";
+
+            if (_percent > 0.0f && _percent < 0.001f)
                 return "0.1%";
+            if (_percent < 0.0f && _percent > -0.001f)
+                return "-0.1%";
+
             if (_percent > 0.999)
                 return "99.9%";
+            if (_percent < -0.999)
+                return "-99.9%";
 
             return string.Format("{0:F1}%", _percent * 100.0f);
         }
