@@ -20,7 +20,9 @@ namespace PocketShieldCore
                     m_Logger.WriteLine("Request Sync due to: Force Sync <" + player.SteamUserId + ">", 3);
                     Sync_SendSyncDataToPlayer(player);
                 }
-                else if (m_PlayerShieldEmitters.ContainsKey((long)player.SteamUserId) && m_PlayerShieldEmitters[(long)player.SteamUserId].RequireSync)
+                else if (player.Character != null &&
+                         m_ShieldEmitters.ContainsKey(player.Character.EntityId) && 
+                         m_ShieldEmitters[player.Character.EntityId].RequireSync)
                 {
                     m_Logger.WriteLine("Request Sync due to: Shield Updated <" + player.SteamUserId + ">", 3);
                     Sync_SendSyncDataToPlayer(player);
@@ -46,7 +48,7 @@ namespace PocketShieldCore
 
             foreach (var value in m_ShieldDamageEffects.Values)
             {
-                double distance = Vector3D.Distance(m_PlayersPosition[_player.SteamUserId], value.Entity.WorldVolume.Center);
+                double distance = Vector3D.Distance(m_CachedPlayersPosition[_player.SteamUserId], value.Entity.WorldVolume.Center);
                 if (distance < Constants.HIT_EFFECT_SYNC_DISTANCE)
                 {
                     int ticks = m_Ticks - value.Ticks;
@@ -60,11 +62,11 @@ namespace PocketShieldCore
                     packet.OtherShieldData.Add(value);
                 }
             }
-            
+
             packet.PlayerSteamUserId = _player.SteamUserId;
-            if (m_PlayerShieldEmitters.ContainsKey((long)_player.SteamUserId))
+            if (m_ShieldEmitters.ContainsKey(_player.Character.EntityId))
             {
-                ShieldEmitter emitter = m_PlayerShieldEmitters[(long)_player.SteamUserId];
+                ShieldEmitter emitter = m_ShieldEmitters[_player.Character.EntityId];
                 if (emitter != null)
                 {
                     packet.MyShieldData = new MyShieldData();

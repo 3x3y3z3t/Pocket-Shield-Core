@@ -16,21 +16,21 @@ namespace PocketShieldCore
     public class SaveDataManager
     {
         private const string c_SavedataFilename = "PocketShield_savedata.dat";
-        private const string c_SectionPlayerData = "PlayerData";
-        private const string c_SectionNpcData = "NpcData";
+        private const string c_SectionCommon = "Common";
         
-        private Dictionary<long, float> m_PlayerData = new Dictionary<long, float>();
-        private Dictionary<long, float> m_NpcData = new Dictionary<long, float>();
-
+        private Dictionary<long, float> m_EnergyData = new Dictionary<long, float>();
+        
+        private Dictionary<long, ShieldEmitter> m_EmittersRef = new Dictionary<long, ShieldEmitter>();
         private Logger m_Logger = null;
 
-        public SaveDataManager(Logger _logger)
+        private List<long> m_CachedKeys = new List<long>();
+
+        public SaveDataManager(Dictionary<long, ShieldEmitter> _emitters, Logger _logger)
         {
+            m_EmittersRef = _emitters;
             m_Logger = _logger;
             LoadData();
         }
-
-
 
         public bool LoadData()
         {
@@ -42,31 +42,31 @@ namespace PocketShieldCore
                 return false;
             }
 
-            int errorCount = 0;
+            string content = string.Empty;
             try
             {
-                TextReader reader = MyAPIGateway.Utilities.ReadFileInWorldStorage(c_SavedataFilename, typeof(PocketShieldCore.SaveDataManager));
-                string content = reader.ReadToEnd();
+                TextReader reader = MyAPIGateway.Utilities.ReadFileInWorldStorage(c_SavedataFilename, typeof(SaveDataManager));
+                content = reader.ReadToEnd();
                 reader.Close();
-
-                MyIni ini = new MyIni();
-                MyIniParseResult result;
-                if (!ini.TryParse(content, out result))
-                {
-                    m_Logger.WriteLine("  Ini parse failed: " + result.ToString(), 2);
-                    return false;
-                }
-
-                errorCount += TryParseSection(ini, c_SectionPlayerData, m_PlayerData);
-                errorCount += TryParseSection(ini, c_SectionNpcData, m_NpcData);
             }
             catch (Exception _e)
             {
-                m_Logger.WriteLine("  >> Exception << " + _e.Message, 1);
+                m_Logger.WriteLine("  >> Exception << Error reading savedata file: " + _e.Message, 1);
                 return false;
             }
-            
-            m_Logger.WriteLine("  Loaded " + m_PlayerData.Keys.Count + " Player, " + m_NpcData.Keys.Count + " NPC shield data, got " + errorCount + " error(s)", 2);
+
+            int errorCount = 0;
+            MyIni iniData = new MyIni();
+            MyIniParseResult result;
+            if (!iniData.TryParse(content, out result))
+            {
+                m_Logger.WriteLine("  Ini parse failed: " + result.ToString(), 2);
+                return false;
+            }
+
+            errorCount = TryParseData(iniData);
+
+            m_Logger.WriteLine("  Loaded " + m_EnergyData.Count + " shield data, got " + errorCount + " error(s)", 2);
             m_Logger.WriteLine("Loading SaveData done", 1);
             return true;
         }
@@ -83,21 +83,14 @@ namespace PocketShieldCore
         {
             m_Logger.WriteLine("Saving SaveData (shield)...", 1);
 
-            MyIni ini = new MyIni();
-
-            ini.AddSection(c_SectionPlayerData);
-            ini.AddSection(c_SectionNpcData);
-
-            foreach (KeyValuePair<long, float> pair in m_PlayerData)
+            MyIni iniData = new MyIni();
+            foreach (var pair in m_EnergyData)
             {
-                ini.Set(c_SectionPlayerData, pair.Key.ToString(), pair.Value);
+                if (pair.Value >= 0.0f)
+                    iniData.Set(c_SectionCommon, pair.Key.ToString(), pair.Value); // only save "real value";
             }
-            foreach (KeyValuePair<long, float> pair in m_NpcData)
-            {
-                ini.Set(c_SectionNpcData, pair.Key.ToString(), pair.Value);
-            }
-
-            string data = ini.ToString();
+            
+            string data = iniData.ToString();
             try
             {
                 TextWriter writer = MyAPIGateway.Utilities.WriteFileInWorldStorage(c_SavedataFilename, typeof(SaveDataManager));
@@ -107,7 +100,7 @@ namespace PocketShieldCore
             }
             catch (Exception _e)
             {
-                m_Logger.WriteLine("  >> Exception << Error during saving Shield data: " + _e.Message, 1);
+                m_Logger.WriteLine("  >> Exception << Error during saving savedata: " + _e.Message, 1);
                 return false;
             }
 
@@ -115,57 +108,57 @@ namespace PocketShieldCore
             return true;
         }
 
-        public void UpdatePlayerData(long _playerUid, float _value)
+        private int TryParseData(MyIni _iniData)
         {
-            m_PlayerData[_playerUid] = _value;
-        }
-
-        public void UpdateNpcData(long _characterId, float _value)
-        {
-            m_NpcData[_characterId] = _value;
-        }
-
-        public float GetPlayerData(long _playerUid)
-        { 
-            if (!m_PlayerData.ContainsKey(_playerUid))
-                return 0.0f;
-
-            return m_PlayerData[_playerUid];
-        }
-
-        public float GetNpcData(long _characterId)
-        {
-            if (!m_NpcData.ContainsKey(_characterId))
-                return 0.0f;
-
-            return m_NpcData[_characterId];
-        }
-
-        private int TryParseSection(MyIni _iniData, string _section, Dictionary<long, float> _data)
-        {
-            if (!_iniData.ContainsSection(_section))
-                return 0;
-
-            int errorCount = 0;
-
+            int errCount = 0;
             List<MyIniKey> keys = new List<MyIniKey>();
-            _iniData.GetKeys(_section, keys);
-
-            foreach (MyIniKey key in keys)
+            _iniData.GetKeys(keys);
+            foreach(MyIniKey key in keys)
             {
+                if (key.IsEmpty)
+                {
+                    ++errCount;
+                    m_Logger.WriteLine("  Ignoring empty key", 2);
+                    continue;
+                }
+
                 long pid;
                 if (!long.TryParse(key.Name, out pid))
                 {
-                    ++errorCount;
-                    m_Logger.WriteLine("  Ignoring error key in section " + _section + ", key=" + key.Name, 2);
+                    ++errCount;
+                    m_Logger.WriteLine("  Ignoring error key [" + key.Name + "]", 2);
                     continue;
                 }
-                _data[pid] = (float)_iniData.Get(key).ToDouble(0.0f);
+
+                double energy = _iniData.Get(key).ToDouble(0.0);
+                if (energy <= 0.0f)
+                {
+                    m_Logger.WriteLine("  Ignoring key [" + key.Name + "] with error value", 2);
+                    continue;
+                }
+
+                m_EnergyData[pid] = (float)energy;
             }
 
-            return errorCount;
+            return errCount;
         }
 
+        public void ApplySavedata()
+        {
+            foreach(var pair in m_EnergyData)
+            {
+                if (m_EmittersRef.ContainsKey(pair.Key))
+                    m_EmittersRef[pair.Key].Energy = pair.Value;
+            }
+        }
 
+        public void Update()
+        {
+            foreach (var pair in m_EmittersRef)
+            {
+                m_EnergyData[pair.Key] = pair.Value.Energy;
+            }
+        }
+        
     }
 }

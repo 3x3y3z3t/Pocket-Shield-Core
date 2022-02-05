@@ -358,7 +358,7 @@ namespace PocketShieldCore
 
         private void InitBaseValue()
         {
-            m_Logger.WriteLine("Init base value", 1);
+            m_Logger.WriteLine("Init base value", 2);
             MaxEnergy = m_BaseMaxEnergy;
             ChargeRate = m_BaseChargeRate;
             ChargeDelay = m_BaseChargeDelay;

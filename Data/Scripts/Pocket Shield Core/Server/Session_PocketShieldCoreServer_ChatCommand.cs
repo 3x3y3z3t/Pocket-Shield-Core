@@ -86,9 +86,8 @@ namespace PocketShieldCore
             {
                 m_Logger.WriteLine("      Executing EmitterCount command", 1);
 
-                MyAPIGateway.Utilities.ShowNotification("[" + Constants.LOG_PREFIX + "] [Server] Emitter Cunt: "
-                    + m_PlayerShieldEmitters.Count + " Player's, " + m_NpcShieldEmitters.Count + " Npc's", 5000);
-                m_Logger.WriteLine("    Emitter count: " + m_PlayerShieldEmitters.Count + " Player's, " + m_NpcShieldEmitters.Count + " Npc's", 1);
+                MyAPIGateway.Utilities.ShowNotification("[" + Constants.LOG_PREFIX + "] [Server] Emitter Cunt: " + m_ShieldEmitters.Count, 5000);
+                m_Logger.WriteLine("    Emitter count: " + m_ShieldEmitters.Count, 1);
 
                 return true;
             }

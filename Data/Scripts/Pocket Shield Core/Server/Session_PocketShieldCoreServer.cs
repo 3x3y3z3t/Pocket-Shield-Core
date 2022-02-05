@@ -31,10 +31,10 @@ namespace PocketShieldCore
         private ulong m_SyncSaved = 0;
 
         private List<IMyPlayer> m_Players = new List<IMyPlayer>();
-        private Dictionary<ulong, Vector3D> m_PlayersPosition = new Dictionary<ulong, Vector3D>();
+        private Dictionary<ulong, Vector3D> m_CachedPlayersPosition = new Dictionary<ulong, Vector3D>();
 
-        private Dictionary<long, ShieldEmitter> m_PlayerShieldEmitters = new Dictionary<long, ShieldEmitter>(); // TODO: maybe use ulong;
-        private Dictionary<long, ShieldEmitter> m_NpcShieldEmitters = new Dictionary<long, ShieldEmitter>();
+        private Dictionary<long, ShieldEmitter> m_ShieldEmitters = new Dictionary<long, ShieldEmitter>();
+
         private Dictionary<long, OtherCharacterShieldData> m_ShieldDamageEffects = new Dictionary<long, OtherCharacterShieldData>();
 
         private List<ulong> m_ForceSyncPlayers = new List<ulong>();
@@ -51,10 +51,10 @@ namespace PocketShieldCore
             m_Logger.LogLevel = m_Config.LogLevel;
 
             m_Logger.WriteLine("Setting up..");
-            
+
             MyAPIGateway.Entities.OnEntityAdd += Entities_OnEntityAdd;
             MyAPIGateway.Entities.OnEntityRemove += Entities_OnEntityRemove;
-            
+
             MyAPIGateway.Utilities.MessageEntered += ChatCommand_MessageEnteredHandle;
             MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
         }
@@ -87,10 +87,10 @@ namespace PocketShieldCore
             MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
 
             ShieldEmitter.s_PluginBonusModifiers = null;
-            
+
             m_Logger.WriteLine("Shutdown Done");
 
-            foreach(Logger logger in m_ShieldLoggers.Values)
+            foreach (Logger logger in m_ShieldLoggers.Values)
             {
                 logger.Close();
             }
@@ -105,11 +105,11 @@ namespace PocketShieldCore
             IsDedicated = IsServer && MyAPIGateway.Utilities.IsDedicated;
             if (!IsServer)
                 return;
-                        
-            m_SaveData = new SaveDataManager(m_Logger);
-            
+
+            m_SaveData = new SaveDataManager(m_ShieldEmitters, m_Logger);
+
             MyAPIGateway.Session.DamageSystem.RegisterBeforeDamageHandler(50, BeforeDamageHandler);
-            
+
             m_Logger.WriteLine("  IsServer = " + IsServer);
             m_Logger.WriteLine("  IsDedicated = " + IsDedicated);
 
@@ -123,16 +123,19 @@ namespace PocketShieldCore
             // clear ticks count;
             if (m_Ticks >= 2000000000)
                 m_Ticks -= 2000000000;
-            
+
             if (m_Ticks % m_Config.ServerUpdateInterval == 0)
             {
                 if (!IsSetupDone)
                     return;
-                
+
                 if (m_IsFirstTick)
                 {
                     Inventory_UpdatePlayerCharacterInventoryOnceBeforeSim();
-                    ShieldFactory_UpdateEmittersOnceBeforeSim();
+
+                    m_Logger.WriteLine("  Updating all Emitters once before sim..", 1);
+                    m_SaveData.ApplySavedata();
+
                     m_IsFirstTick = false;
                 }
 
@@ -140,7 +143,7 @@ namespace PocketShieldCore
                 CachePlayersPosition();
                 Sync_SyncDataToPlayers();
 
-                UpdateSaveData();
+                m_SaveData.Update();
 
                 m_ApiBackend_CallbacksCount = m_ApiBackend_EmitterPropCallbacks.Count;
                 //m_Logger.WriteLine("Callback count = " + m_ApiBackend_CallbacksCount);
@@ -148,7 +151,8 @@ namespace PocketShieldCore
 
             if (m_Ticks % m_Config.ShieldUpdateInterval == 0)
             {
-                ShieldFactory_UpdateEmitters(m_Config.ShieldUpdateInterval);
+                foreach (ShieldEmitter emitter in m_ShieldEmitters.Values)
+                    emitter.Update(m_Config.ShieldUpdateInterval);
             }
 
             if (m_Ticks % 60000 == 0)
@@ -212,6 +216,9 @@ namespace PocketShieldCore
 
         private void Character_CharacterDied(IMyCharacter _character)
         {
+            if (_character == null)
+                return;
+
             ShieldFactory_ReplaceEmitter(_character, null);
 
             ulong playerUid = GetPlayerSteamUid(_character);
@@ -244,7 +251,7 @@ namespace PocketShieldCore
                 //m_Logger.WriteLine("  Also all their Shield Emitters and/or Plugins have been removed", 2);
             }
         }
-        
+
         public void BeforeDamageHandler(object _target, ref MyDamageInformation _damageInfo)
         {
             if (m_DamageQueue.Contains(_damageInfo.GetHashCode()))
@@ -268,11 +275,11 @@ namespace PocketShieldCore
                     " - Character [" + Utils.GetCharacterName(character) + "] (EntityId = " + character.EntityId + ") (Player <" + GetPlayerSteamUid(character) + ">)", 4);
             }
 
-            ShieldEmitter emitter = ShieldFactory_GetEmitter(character);
-            if (emitter == null)
+            if (!m_ShieldEmitters.ContainsKey(character.EntityId))
                 return;
 
             m_Logger.WriteLine("  Trying passing damage through Shield Emitter..", 4);
+            ShieldEmitter emitter = m_ShieldEmitters[character.EntityId];
             float beforeDamageHealth = MyVisualScriptLogicProvider.GetPlayersHealth(character.ControllerInfo.ControllingIdentityId);
             if (emitter.TakeDamage(ref _damageInfo))
             {
@@ -303,26 +310,26 @@ namespace PocketShieldCore
         private void UpdatePlayersList()
         {
             m_Players.Clear();
+
             MyAPIGateway.Players.GetPlayers(m_Players);
+            for (int i = 0; i < m_Players.Count; ++i)
+            {
+                if (m_Players[i].IsBot)
+                {
+                    m_Players.RemoveAt(i);
+                    --i;
+                }
+            }
         }
 
         private void CachePlayersPosition()
         {
-            m_PlayersPosition.Clear();
+            m_CachedPlayersPosition.Clear();
             foreach (var player in m_Players)
             {
                 if (player.Character != null)
-                    m_PlayersPosition[player.SteamUserId] = player.Character.WorldVolume.Center;
+                    m_CachedPlayersPosition[player.SteamUserId] = player.Character.WorldVolume.Center;
             }
-        }
-
-        private void UpdateSaveData()
-        {
-            foreach (long key in m_PlayerShieldEmitters.Keys)
-                m_SaveData.UpdatePlayerData(key, m_PlayerShieldEmitters[key].Energy);
-
-            foreach (long key in m_NpcShieldEmitters.Keys)
-                m_SaveData.UpdateNpcData(key, m_NpcShieldEmitters[key].Energy);
         }
 
         private IMyPlayer GetPlayer(IMyCharacter _character)
@@ -335,9 +342,7 @@ namespace PocketShieldCore
 
             foreach (IMyPlayer player in m_Players)
             {
-                if (player.Character == null)
-                    continue;
-                if (player.Character.EntityId == _character.EntityId)
+                if (player.Character != null && player.Character.EntityId == _character.EntityId)
                     return player;
             }
 

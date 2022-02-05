@@ -31,85 +31,18 @@ namespace PocketShieldCore
             return false;
         }
 
-        private void ShieldFactory_UpdateEmittersOnceBeforeSim()
-        {
-            m_Logger.WriteLine("  Updating all Emitters once before sim..", 1);
-            foreach (long key in m_PlayerShieldEmitters.Keys)
-            {
-                float value = m_SaveData.GetPlayerData(key);
-                m_PlayerShieldEmitters[key].Energy = value;
-            }
-
-            foreach (long key in m_NpcShieldEmitters.Keys)
-            {
-                float value = m_SaveData.GetNpcData(key);
-                m_NpcShieldEmitters[key].Energy = value;
-            }
-        }
-
-        private void ShieldFactory_UpdateEmitters(int _ticks)
-        {
-            foreach (long key in m_PlayerShieldEmitters.Keys)
-            {
-                m_PlayerShieldEmitters[key].Update(_ticks);
-            }
-
-            foreach (long key in m_NpcShieldEmitters.Keys)
-            {
-                m_NpcShieldEmitters[key].Update(_ticks);
-            }
-        }
-
-        private ShieldEmitter ShieldFactory_GetEmitter(IMyCharacter _character)
-        {
-            if (GetPlayerSteamUid(_character) == 0U)
-            {
-                if (m_NpcShieldEmitters.ContainsKey(_character.EntityId))
-                    return m_NpcShieldEmitters[_character.EntityId];
-            }
-            else
-            {
-                long playerId = (long)GetPlayerSteamUid(_character);
-                if (m_PlayerShieldEmitters.ContainsKey(playerId))
-                    return m_PlayerShieldEmitters[playerId];
-            }
-
-            return null;
-        }
-
         private void ShieldFactory_ReplaceEmitter(IMyCharacter _character, ShieldEmitter _newEmitter)
         {
-            if (_character == null)
-                return;
-            
-            if (GetPlayerSteamUid(_character) == 0U)
+            if (_newEmitter == null)
             {
-                if (_newEmitter == null)
-                {
-                    m_NpcShieldEmitters.Remove(_character.EntityId);
-                    RemoveShieldLogger((ulong)_character.EntityId);
-                }
-                else
-                {
-                    m_NpcShieldEmitters[_character.EntityId] = _newEmitter;
-                    Logger logger = GetLogger((ulong)_character.EntityId);
-                    logger.WriteLine(" > New Emitter < " + _newEmitter.SubtypeId.String);
-                }
+                m_ShieldEmitters.Remove(_character.EntityId);
+                RemoveShieldLogger((ulong)_character.EntityId);
             }
             else
             {
-                long playerId = (long)GetPlayerSteamUid(_character);
-                if (_newEmitter == null)
-                {
-                    m_PlayerShieldEmitters.Remove(playerId);
-                    RemoveShieldLogger((ulong)_character.EntityId);
-                }
-                else
-                {
-                    m_PlayerShieldEmitters[playerId] = _newEmitter;
-                    Logger logger = GetLogger((ulong)_character.EntityId);
-                    logger.WriteLine(" > New Emitter < " + _newEmitter.SubtypeId.String);
-                }
+                m_ShieldEmitters[_character.EntityId] = _newEmitter;
+                Logger logger = GetLogger((ulong)_character.EntityId);
+                logger.WriteLine(" > New Emitter < " + _newEmitter.SubtypeId.String);
             }
         }
 

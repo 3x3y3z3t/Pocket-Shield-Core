@@ -16,4 +16,4 @@ Here is [Pocket Shield Core on Steam](https://steamcommunity.com/sharedfiles/fil
 - **This mod may break your server**. I don't play MP so I can not test for bugs on MP/DS. Many thanks if you sacrifice your server and report me MP/DS bugs (I may not be able to fix them though).
 
 # Version
-Current version: v1.2.4
+Current version: v1.3.1

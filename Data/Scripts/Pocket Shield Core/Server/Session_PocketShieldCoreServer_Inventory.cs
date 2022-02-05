@@ -42,7 +42,9 @@ namespace PocketShieldCore
             List<MyPhysicalInventoryItem> InventoryItems = _inventory.GetItems();
             m_Logger.WriteLine("  [" + Utils.GetCharacterName(character) + "]'s inventory now contains " + InventoryItems.Count + " items.", 4);
 
-            ShieldEmitter oldEmitter = ShieldFactory_GetEmitter(character);
+            ShieldEmitter oldEmitter = null;
+            if (m_ShieldEmitters.ContainsKey(character.EntityId))
+                oldEmitter = m_ShieldEmitters[character.EntityId];
 
             foreach (MyPhysicalInventoryItem item in InventoryItems)
             {
@@ -62,14 +64,13 @@ namespace PocketShieldCore
                     {
                         m_Logger.WriteLine("    Old Emitter is null, try creating Emitter..", 4);
                         ShieldFactory_TryCreateEmitter(subtypeId, character);
-                        //ShieldFactory_TryCreateEmitterDel(subtypeId, character);
                         if (m_FirstEmitterFound != null)
                         {
                             ShieldFactory_ReplaceEmitter(character, m_FirstEmitterFound);
                             oldEmitter = m_FirstEmitterFound;
                             m_Logger.WriteLine("    Emitter Created: " + m_FirstEmitterFound.SubtypeId.String, 4);
                             m_Logger.WriteLine("    Old Emitter:     " + oldEmitter.SubtypeId.String, 4);
-                            m_Logger.WriteLine("    Emitter count: " + m_PlayerShieldEmitters.Count + " Player's, " + m_NpcShieldEmitters.Count + " Npc's", 1);
+                            m_Logger.WriteLine("    Emitter count: " + m_ShieldEmitters.Count, 4);
                         }
                     }
                     else
@@ -87,7 +88,7 @@ namespace PocketShieldCore
                                 oldEmitter = m_FirstEmitterFound;
                                 m_Logger.WriteLine("    Emitter Created: " + m_FirstEmitterFound.SubtypeId.String, 4);
                                 m_Logger.WriteLine("    Old Emitter:     " + oldEmitter.SubtypeId.String, 4);
-                                m_Logger.WriteLine("    Emitter count: " + m_PlayerShieldEmitters.Count + " Player's, " + m_NpcShieldEmitters.Count + " Npc's", 1);
+                                m_Logger.WriteLine("    Emitter count: " + m_ShieldEmitters.Count, 4);
                             }
                         }
                         else
