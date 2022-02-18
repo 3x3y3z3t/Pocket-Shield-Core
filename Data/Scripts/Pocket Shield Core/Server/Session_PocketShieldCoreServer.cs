@@ -1,14 +1,10 @@
 ﻿// ;
 using Sandbox.Game;
 using Sandbox.ModAPI;
-using System;
 using System.Collections.Generic;
 using VRage.Game.Components;
 using VRage.Game.ModAPI;
-using VRage.Utils;
-using VRage.Game;
 using ExShared;
-using VRage.Game.Entity;
 using VRageMath;
 
 namespace PocketShieldCore
@@ -16,12 +12,12 @@ namespace PocketShieldCore
     [MySessionComponentDescriptor(MyUpdateOrder.BeforeSimulation)]
     public partial class Session_PocketShieldCoreServer : MySessionComponentBase
     {
-        public bool IsServer { get; private set; }
-        public bool IsDedicated { get; private set; }
-        public bool IsSetupDone { get; private set; }
+        public bool IsServer { get; private set; } = false;
+        public bool IsDedicated { get; private set; } = false;
 
         private int m_Ticks = 0;
         private bool m_IsFirstTick = true;
+        private bool m_IsSetupDone = false;
 
         private Logger m_Logger = null;
         private ServerConfig m_Config = null;
@@ -45,80 +41,92 @@ namespace PocketShieldCore
 
         public override void LoadData()
         {
+            IsServer = MyAPIGateway.Multiplayer.IsServer;
+            IsDedicated = IsServer && MyAPIGateway.Utilities.IsDedicated;
+
             m_Logger = new Logger("server");
-            m_Config = new ServerConfig("server_config.ini", m_Logger);
+            m_Logger.WriteLine("  IsServer = " + IsServer);
+            m_Logger.WriteLine("  IsDedicated = " + IsDedicated);
 
-            m_Logger.LogLevel = m_Config.LogLevel;
+            if (IsServer)
+            {
+                m_Config = new ServerConfig("server_config.ini", m_Logger);
 
-            m_Logger.WriteLine("Setting up..");
+                m_Logger.LogLevel = m_Config.LogLevel;
 
-            MyAPIGateway.Entities.OnEntityAdd += Entities_OnEntityAdd;
-            MyAPIGateway.Entities.OnEntityRemove += Entities_OnEntityRemove;
+                m_Logger.WriteLine("Setting up..");
 
-            MyAPIGateway.Utilities.MessageEntered += ChatCommand_MessageEnteredHandle;
-            MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
+                MyAPIGateway.Entities.OnEntityAdd += Entities_OnEntityAdd;
+                MyAPIGateway.Entities.OnEntityRemove += Entities_OnEntityRemove;
+
+                MyAPIGateway.Utilities.MessageEntered += ChatCommand_MessageEnteredHandle;
+                MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
+            }
+
         }
 
         protected override void UnloadData()
         {
-            m_Logger.WriteLine("Shutting down..");
-
-            if (m_ApiBackend_EmitterPropCallbacks.Count > 0)
+            if (IsServer)
             {
-                string callbackLeakLog = "";
-                callbackLeakLog = "  > Warning < Some mods has not unregistered their " + m_ApiBackend_EmitterPropCallbacks.Count + " callbacks yet";
-                if (m_ApiBackend_RegisteredMod.Count == 0)
-                    callbackLeakLog += " (this should not happens)";
-                m_Logger.WriteLine(callbackLeakLog);
+                m_Logger.WriteLine("Shutting down..");
+
+                if (m_ApiBackend_EmitterPropCallbacks.Count > 0)
+                {
+                    string callbackLeakLog = "";
+                    callbackLeakLog = "  > Warning < Some mods has not unregistered their " + m_ApiBackend_EmitterPropCallbacks.Count + " callbacks yet";
+                    if (m_ApiBackend_RegisteredMod.Count == 0)
+                        callbackLeakLog += " (this should not happens)";
+                    m_Logger.WriteLine(callbackLeakLog);
+                }
+                m_ApiBackend_EmitterPropCallbacks.Clear();
+
+                foreach (string mod in m_ApiBackend_RegisteredMod)
+                    m_Logger.WriteLine("  > Warning < Mod " + mod + " has not called DeInit() yet");
+
+                m_SaveData.UnloadData();
+
+                m_Logger.WriteLine("  > " + m_SyncSaved + " < sync operations saved");
+
+                m_Logger.WriteLine("Shutdown Done");
+
+                foreach (Logger logger in m_ShieldLoggers.Values)
+                {
+                    logger.Close();
+                }
+                m_ShieldLoggers.Clear();
+
+                MyAPIGateway.Utilities.MessageEntered -= ChatCommand_MessageEnteredHandle;
+                MyAPIGateway.Entities.OnEntityAdd -= Entities_OnEntityAdd;
+                MyAPIGateway.Entities.OnEntityRemove -= Entities_OnEntityRemove;
+
+                MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
             }
-            m_ApiBackend_EmitterPropCallbacks.Clear();
-
-            foreach (string mod in m_ApiBackend_RegisteredMod)
-                m_Logger.WriteLine("  > Warning < Mod " + mod + " has not called DeInit() yet");
-
-            m_SaveData.UnloadData();
-
-            m_Logger.WriteLine("  > " + m_SyncSaved + " < sync operations saved");
-
-            MyAPIGateway.Utilities.MessageEntered -= ChatCommand_MessageEnteredHandle;
-            //MyAPIGateway.Entities.OnEntityAdd -= Entities_OnEntityAdd;
-            //MyAPIGateway.Entities.OnEntityRemove -= Entities_OnEntityRemove;
-
-            MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
 
             ShieldEmitter.s_PluginBonusModifiers = null;
 
-            m_Logger.WriteLine("Shutdown Done");
-
-            foreach (Logger logger in m_ShieldLoggers.Values)
-            {
-                logger.Close();
-            }
             m_Logger.Close();
-
-            m_ShieldLoggers = null;
         }
 
         public override void BeforeStart()
         {
-            IsServer = (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE || MyAPIGateway.Multiplayer.IsServer);
-            IsDedicated = IsServer && MyAPIGateway.Utilities.IsDedicated;
             if (!IsServer)
                 return;
 
             m_SaveData = new SaveDataManager(m_ShieldEmitters, m_Logger);
 
             MyAPIGateway.Session.DamageSystem.RegisterBeforeDamageHandler(50, BeforeDamageHandler);
-
-            m_Logger.WriteLine("  IsServer = " + IsServer);
-            m_Logger.WriteLine("  IsDedicated = " + IsDedicated);
-
+            
             m_Logger.WriteLine("Setup Done");
-            IsSetupDone = true;
+
+            m_IsSetupDone = true;
         }
 
         public override void UpdateBeforeSimulation()
         {
+            if (!m_IsSetupDone)
+                return;
+
             ++m_Ticks;
             // clear ticks count;
             if (m_Ticks >= 2000000000)
@@ -126,11 +134,9 @@ namespace PocketShieldCore
 
             if (m_Ticks % m_Config.ServerUpdateInterval == 0)
             {
-                if (!IsSetupDone)
-                    return;
-
                 if (m_IsFirstTick)
                 {
+                    m_Logger.WriteLine("  Updating all Characters' inventory once before sim..", 1);
                     Inventory_UpdatePlayerCharacterInventoryOnceBeforeSim();
 
                     m_Logger.WriteLine("  Updating all Emitters once before sim..", 1);
@@ -167,19 +173,20 @@ namespace PocketShieldCore
 
         public override void SaveData()
         {
+            if (!IsServer)
+                return;
+
             m_SaveData.SaveData();
         }
 
         private void Entities_OnEntityAdd(VRage.ModAPI.IMyEntity _entity)
         {
-            // m_Logger may be null here during LoadData();
-
             m_Logger.WriteLine("New Entity added..", 5);
             IMyCharacter character = _entity as IMyCharacter;
             if (character == null)
                 return;
 
-            m_Logger.WriteLine("  Added Character [" + Utils.GetCharacterName(character) + "] (EntitId = " + character.EntityId + ")", 1);
+            m_Logger.WriteLine("  Added Character [" + Utils.GetCharacterName(character) + "] (EntitId = " + character.EntityId + ")", 2);
             m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "]: Hooking character.CharacterDied..", 5);
             character.CharacterDied += Character_CharacterDied;
 
