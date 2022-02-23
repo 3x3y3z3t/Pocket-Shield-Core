@@ -1,20 +1,22 @@
 ﻿// ;
-using ExShared;
 using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using VRage;
-using VRage.Game.ModAPI;
 using VRage.Utils;
+
+using ServerData = VRage.MyTuple<
+    string,
+    System.Collections.Generic.Dictionary<VRage.Utils.MyStringHash, System.Collections.Generic.List<object>>,
+    System.Collections.Generic.Dictionary<VRage.Utils.MyStringHash, float>,
+    System.Collections.Generic.List<System.Delegate>>;
 
 namespace PocketShieldCore
 {
     public partial class Session_PocketShieldCoreServer
     {
-        private List<string> m_ApiBackend_RegisteredMod = new List<string>();
-        private List<Delegate> m_ApiBackend_EmitterPropCallbacks = new List<Delegate>();
-        private int m_ApiBackend_CallbacksCount = 0;
+        private List<string> m_ApiBackend_RegisteredMod = null;
+        private List<Delegate> m_ApiBackend_ExposedMethods = null;
 
         private void ApiBackend_ModMessageHandle(object _payload)
         {
@@ -30,20 +32,15 @@ namespace PocketShieldCore
                     m_ApiBackend_RegisteredMod.Add(modinfo);
 
                     m_Logger.WriteLine("Registering mod " + modinfo + " (" + reqVer + ")..", 0);
-                    if (reqVer == "Ver1")
-                    {
-                        ApiBackend_HandleRequestV1();
-                    }
-                    
+                    ApiBackend_HandleRequestV2();
+
                     Blueprints_UpdateBlueprintData(true);
                 }
                 else if (msg.StartsWith(PocketShieldAPI.STR_UNREGISTER_MOD))
                 {
                     string modinfo = msg.Substring(PocketShieldAPI.STR_UNREGISTER_MOD.Length + 1);
-                    m_Logger.WriteLine("UnRegistering mod " + modinfo + "..", 0);
-                    m_Logger.WriteLine("  Mod unregistered " + (m_ApiBackend_CallbacksCount - m_ApiBackend_EmitterPropCallbacks.Count) + " callbacks", 0);
-                    m_ApiBackend_CallbacksCount = m_ApiBackend_EmitterPropCallbacks.Count;
 
+                    m_Logger.WriteLine("UnRegistering mod " + modinfo + "..", 0);
                     m_ApiBackend_RegisteredMod.Remove(modinfo);
                 }
             }
@@ -58,17 +55,19 @@ namespace PocketShieldCore
             }
         }
 
-        private void ApiBackend_HandleRequestV1()
+        private void ApiBackend_HandleRequestV2()
         {
-            MyTuple<string, List<Delegate>, Dictionary<MyStringHash, float>> data = new MyTuple<string, List<Delegate>, Dictionary<MyStringHash, float>>
+            ServerData data = new ServerData()
             {
-                Item1 = "Server Version=" + Constants.API_BACKEND_VERSION,
-                Item2 = m_ApiBackend_EmitterPropCallbacks,
-                Item3 = ShieldEmitter.s_PluginBonusModifiers
+                Item1 = "Server Version=" + PocketShieldAPIV2.SERVER_BACKEND_VERSION,
+                Item2 = m_ShieldManager_EmitterConstructionData,
+                Item3 = ShieldEmitter.s_PluginBonusModifiers,
+                Item4 = m_ApiBackend_ExposedMethods
             };
-            
-            MyAPIGateway.Utilities.SendModMessage(PocketShieldAPI.MOD_ID, data);
+
+            MyAPIGateway.Utilities.SendModMessage(PocketShieldAPIV2.MOD_ID, data);
         }
+
 
 
     }

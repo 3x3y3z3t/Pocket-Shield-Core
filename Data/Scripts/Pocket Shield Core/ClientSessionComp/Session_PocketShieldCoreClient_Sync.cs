@@ -8,43 +8,44 @@ namespace PocketShieldCore
 {
     public partial class Session_PocketShieldCoreClient
     {
-        public void Sync_HandleSyncShieldData(ushort _handlerId, byte[] _package, ulong _senderPlayerId, bool _sentMsg)
+        public void Sync_ReceiveDataFromServer(ushort _handlerId, byte[] _package, ulong _senderPlayerId, bool _sentMsg)
         {
             if (MyAPIGateway.Session == null)
                 return;
 
             m_Logger.WriteLine("Starting HandleSyncShieldData()", 5);
 
+            m_Logger.WriteLine("  Recieved message from <" + _senderPlayerId + ">", 5);
+            if (!_sentMsg)
+            {
+                m_Logger.WriteLine("  Message did not come from server and will be ignored", 4);
+                return;
+            }
+
             try
             {
-                string decodedPackage = Encoding.Unicode.GetString(_package);
-                //m_Logger.WriteLine("  _handlerId = " + _handlerId + ", _senderPlayerId = " + _senderPlayerId + ", _sentMsg = " + _sentMsg, 5);
-                m_Logger.WriteLine("  Recieved message from <" + _senderPlayerId + ">", 5);
-
                 Packet_ShieldData packet = MyAPIGateway.Utilities.SerializeFromBinary<Packet_ShieldData>(_package);
 
-                if (packet.PlayerSteamUserId != MyAPIGateway.Session.Player.SteamUserId)
+                if (packet.PlayerSteamUserId != MyAPIGateway.Session?.Player?.SteamUserId)
                 {
                     m_Logger.WriteLine("  Data is for player <" + packet.PlayerSteamUserId + ">, not me", 4);
                     return;
                 }
 
-                if (packet.OtherShieldData != null)
+                if (packet.OtherAutoShieldData != null)
                 {
-                    foreach (var data in packet.OtherShieldData)
+                    foreach (var data in packet.OtherAutoShieldData)
                     {
                         Sync_AddOrUpdateData(data);
                     }
                 }
 
-                if (packet.MyShieldData != null && packet.MyShieldData.HasShield)
-                {
-                    Sync_CopyShieldDataFrom(packet.MyShieldData);
-                }
-                else
-                {
-                    Sync_ClearShieldData();
-                }
+                if (packet.MyManualShieldData != null)
+                    Sync_CopyManualShieldData(packet.MyManualShieldData);
+
+                if (packet.MyAutoShieldData != null)
+                    Sync_CopyAutoShieldData(packet.MyAutoShieldData);
+
                 m_Logger.WriteLine("  Shield Data updated", 4);
 
                 if (m_ShieldHudPanel != null)
@@ -56,10 +57,63 @@ namespace PocketShieldCore
             }
         }
 
+        private void Sync_CopyManualShieldData(MyShieldData _data)
+        {
+            if (_data.HasShield)
+            {
+                m_ManualShieldData.SubtypeId = _data.SubtypeId;
+                m_ManualShieldData.IsActive = _data.IsActive;
+                m_ManualShieldData.IsTurnedOn = _data.IsTurnedOn;
+                m_ManualShieldData.Energy = _data.Energy;
+                m_ManualShieldData.MaxEnergy = _data.MaxEnergy;
+                m_ManualShieldData.OverchargeRemainingPercent = _data.OverchargeRemainingPercent;
+                
+            }
+            else
+            {
+                m_ManualShieldData.SubtypeId = MyStringHash.NullOrEmpty;
+                m_ManualShieldData.IsActive = false;
+                m_ManualShieldData.IsTurnedOn = false;
+                m_ManualShieldData.Energy = 0.0f;
+                m_ManualShieldData.MaxEnergy = 0.0f;
+                m_ManualShieldData.OverchargeRemainingPercent = 0.0f;
+            }
+        }
+
+        private void Sync_CopyAutoShieldData(MyShieldData _data)
+        {
+            if (_data.HasShield)
+            {
+                m_AutoShieldData.SubtypeId = _data.SubtypeId;
+                m_AutoShieldData.IsActive = _data.IsActive;
+                m_AutoShieldData.IsTurnedOn = _data.IsTurnedOn;
+                m_AutoShieldData.Energy = _data.Energy;
+                m_AutoShieldData.MaxEnergy = _data.MaxEnergy;
+                m_AutoShieldData.OverchargeRemainingPercent = _data.OverchargeRemainingPercent;
+                m_AutoShieldData.DefResList.Clear();
+                if (_data.DefResList != null)
+                {
+                    foreach (var pair in _data.DefResList)
+                        m_AutoShieldData.DefResList[pair.Key] = pair.Value;
+                }
+            }
+            else
+            {
+                m_AutoShieldData.SubtypeId = MyStringHash.NullOrEmpty;
+                m_AutoShieldData.IsActive = false;
+                m_AutoShieldData.IsTurnedOn = false;
+                m_AutoShieldData.Energy = 0.0f;
+                m_AutoShieldData.MaxEnergy = 0.0f;
+                m_AutoShieldData.OverchargeRemainingPercent = 0.0f;
+                m_AutoShieldData.DefResList.Clear();
+            }
+        }
+
         public void Sync_AddOrUpdateData(OtherCharacterShieldData _data)
         {
             foreach (var data in m_DrawList)
             {
+                m_Logger.WriteLine("Add Data");
                 if (data.EntityId == _data.EntityId)
                 {
                     data.Ticks = _data.Ticks;
@@ -72,25 +126,6 @@ namespace PocketShieldCore
             m_DrawList.Add(_data);
         }
 
-        private void Sync_ClearShieldData()
-        {
-            m_ShieldData.SubtypeId = MyStringHash.NullOrEmpty;
-            m_ShieldData.Energy = 0.0f;
-            m_ShieldData.MaxEnergy = 0.0f;
-            m_ShieldData.OverchargeRemainingPercent = 0.0f;
-            m_ShieldData.DefResList.Clear();
-        }
 
-        private void Sync_CopyShieldDataFrom(MyShieldData _other)
-        {
-            m_ShieldData.SubtypeId = _other.SubtypeId;
-            m_ShieldData.Energy = _other.Energy;
-            m_ShieldData.MaxEnergy = _other.MaxEnergy;
-            m_ShieldData.OverchargeRemainingPercent = _other.OverchargeRemainingPercent;
-            if (_other.DefResList == null)
-                m_ShieldData.DefResList.Clear();
-            else
-                m_ShieldData.DefResList = _other.DefResList;
-        }
     }
 }

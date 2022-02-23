@@ -1,7 +1,9 @@
 ﻿// ;
 using Sandbox.ModAPI;
+using System;
 using System.Collections.Generic;
 using VRage.Game.ModAPI;
+using VRage.Utils;
 using VRageMath;
 
 namespace PocketShieldCore
@@ -10,7 +12,7 @@ namespace PocketShieldCore
     {
         private void Sync_SyncDataToPlayers()
         {
-            foreach (IMyPlayer player in m_Players)
+            foreach (IMyPlayer player in m_CachedPlayers)
             {
                 ++m_SyncSaved;
 
@@ -21,8 +23,8 @@ namespace PocketShieldCore
                     Sync_SendSyncDataToPlayer(player);
                 }
                 else if (player.Character != null &&
-                         m_ShieldEmitters.ContainsKey(player.Character.EntityId) && 
-                         m_ShieldEmitters[player.Character.EntityId].RequireSync)
+                         m_ShieldManager_CharacterShieldManagers.ContainsKey(player.Character.EntityId) && 
+                         m_ShieldManager_CharacterShieldManagers[player.Character.EntityId].RequireSync)
                 {
                     m_Logger.WriteLine("Request Sync due to: Shield Updated <" + player.SteamUserId + ">", 3);
                     Sync_SendSyncDataToPlayer(player);
@@ -44,11 +46,12 @@ namespace PocketShieldCore
             Packet_ShieldData packet = new Packet_ShieldData();
 
             if (m_ShieldDamageEffects.Count > 0)
-                packet.OtherShieldData = new List<OtherCharacterShieldData>();
+                packet.OtherAutoShieldData = new List<OtherCharacterShieldData>();
 
             foreach (var value in m_ShieldDamageEffects.Values)
             {
                 double distance = Vector3D.Distance(m_CachedPlayersPosition[_player.SteamUserId], value.Entity.WorldVolume.Center);
+                m_Logger.WriteLine("EntityId = " + value.EntityId);
                 if (distance < Constants.HIT_EFFECT_SYNC_DISTANCE)
                 {
                     int ticks = m_Ticks - value.Ticks;
@@ -59,38 +62,114 @@ namespace PocketShieldCore
                     else
                         value.Ticks = Constants.HIT_EFFECT_LIVE_TICKS - ticks;
 
-                    packet.OtherShieldData.Add(value);
+                    packet.OtherAutoShieldData.Add(value);
                 }
             }
 
             packet.PlayerSteamUserId = _player.SteamUserId;
-            if (m_ShieldEmitters.ContainsKey(_player.Character.EntityId))
+            packet.MyManualShieldData = new MyShieldData() { SubtypeId = MyStringHash.NullOrEmpty };
+            packet.MyAutoShieldData = new MyShieldData() { SubtypeId = MyStringHash.NullOrEmpty };
+
+            if (m_ShieldManager_CharacterShieldManagers.ContainsKey(_player.Character.EntityId))
             {
-                ShieldEmitter emitter = m_ShieldEmitters[_player.Character.EntityId];
+                ShieldEmitter emitter = null;
+
+                // manual emitter;
+                emitter = m_ShieldManager_CharacterShieldManagers[_player.Character.EntityId].ManualEmitter;
                 if (emitter != null)
                 {
-                    packet.MyShieldData = new MyShieldData();
-                    packet.MyShieldData.SubtypeId = emitter.SubtypeId;
-                    packet.MyShieldData.Energy = emitter.Energy;
-                    packet.MyShieldData.MaxEnergy = emitter.MaxEnergy;
-                    packet.MyShieldData.DefResList = emitter.DefResList;
-                    packet.MyShieldData.OverchargeRemainingPercent = emitter.OverchargeRemainingPercent;
-
+                    packet.MyManualShieldData = new MyShieldData
+                    {
+                        SubtypeId = emitter.SubtypeId,
+                        IsActive = emitter.IsActive,
+                        IsTurnedOn = emitter.IsTurnedOn,
+                        Energy = emitter.Energy,
+                        MaxEnergy = emitter.MaxEnergy,
+                        DefResList = emitter.DefResList,
+                        OverchargeRemainingPercent = emitter.OverchargeRemainingPercent
+                    };
                     emitter.RequireSync = false;
                 }
-                else
+
+                // auto emitter;
+                emitter = m_ShieldManager_CharacterShieldManagers[_player.Character.EntityId].AutoEmitter;
+                if (emitter != null)
                 {
-                    m_Logger.WriteLine("> Warning < Emitter is null. This should not happens.");
-                    m_Logger.WriteLine("  More info: Player Steam UID = " + _player.SteamUserId);
+                    packet.MyAutoShieldData = new MyShieldData
+                    {
+                        SubtypeId = emitter.SubtypeId,
+                        IsTurnedOn = emitter.IsTurnedOn,
+                        Energy = emitter.Energy,
+                        MaxEnergy = emitter.MaxEnergy,
+                        DefResList = emitter.DefResList,
+                        OverchargeRemainingPercent = emitter.OverchargeRemainingPercent
+                    };
+                    emitter.RequireSync = false;
                 }
             }
 
             var data = MyAPIGateway.Utilities.SerializeToBinary(packet);
             m_Logger.WriteLine("Sending sync data to player " + _player.SteamUserId, 5);
-            MyAPIGateway.Multiplayer.SendMessageTo(Constants.MSG_HANDLER_ID_SYNC, data, _player.SteamUserId);
+            MyAPIGateway.Multiplayer.SendMessageTo(Constants.SYNC_ID_TO_CLIENT, data, _player.SteamUserId);
 
             --m_SyncSaved;
             m_ShieldDamageEffects.Clear();
+        }
+
+        public void Sync_ReceiveDataFromClient(ushort _handlerId, byte[] _package, ulong _senderPlayerId, bool _sentMsg)
+        {
+            if (MyAPIGateway.Session == null)
+                return;
+
+            m_Logger.WriteLine("Starting HandleSyncShieldData()", 5);
+
+            m_Logger.WriteLine("  Recieved message from <" + _senderPlayerId + ">", 5);
+            if (_sentMsg)
+            {
+                m_Logger.WriteLine("  Message came from server and will be ignored", 4);
+                return;
+            }
+
+            try
+            {
+                Packet_ToggleShieldData data = MyAPIGateway.Utilities.SerializeFromBinary<Packet_ToggleShieldData>(_package);
+                if (data.Key != Constants.TOGGLE_SHIELD_KEY)
+                {
+                    m_Logger.WriteLine("  Key did not match (key=" + data.Key + ")", 4);
+                    return;
+                }
+
+                IMyPlayer player = GetPlayer(_senderPlayerId);
+                if (player == null)
+                {
+                    m_Logger.WriteLine("  Player <" + _senderPlayerId + "> does not exist (this should not happen)", 4);
+                    return;
+                }
+
+                if (player.Character == null)
+                {
+                    m_Logger.WriteLine("  Player <" + _senderPlayerId + "> does not have a Character (this should not happen)", 4);
+                    return;
+                }
+
+                if (!m_ShieldManager_CharacterShieldManagers.ContainsKey(player.Character.EntityId))
+                {
+                    m_Logger.WriteLine("  Player <" + _senderPlayerId + "> character does not have any Shield Emitter (this should not happen)", 4);
+                    return;
+                }
+
+                CharacterShieldManager shieldManager = m_ShieldManager_CharacterShieldManagers[player.Character.EntityId];
+                if (shieldManager.ManualEmitter != null)
+                    shieldManager.ManualEmitter.IsTurnedOn = !shieldManager.ManualEmitter.IsTurnedOn;
+                if (shieldManager.AutoEmitter != null)
+                    shieldManager.AutoEmitter.IsTurnedOn = !shieldManager.AutoEmitter.IsTurnedOn;
+
+                m_Logger.WriteLine("  Player <" + _senderPlayerId + "> toggled their shield(s)", 4);
+            }
+            catch (Exception _e)
+            {
+                m_Logger.WriteLine("  > Exception < Error during parsing sync data from <" + _senderPlayerId + ">: " + _e.Message, 0);
+            }
         }
 
     }

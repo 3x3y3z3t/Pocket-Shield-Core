@@ -45,28 +45,45 @@
  * 
  */
 
+
 using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
-using VRage;
 using VRage.Utils;
 using VRageMath;
 
+using ServerData = VRage.MyTuple<
+    string,
+    System.Collections.Generic.Dictionary<VRage.Utils.MyStringHash, System.Collections.Generic.List<object>>,
+    System.Collections.Generic.Dictionary<VRage.Utils.MyStringHash, float>,
+    System.Collections.Generic.List<System.Delegate>>;
+
+using ClientData = VRage.MyTuple<
+    string,
+    System.Collections.Generic.List<System.Collections.Generic.List<object>>,
+    System.Collections.Generic.List<System.Collections.Generic.List<object>>>;
+
 namespace PocketShieldCore
 {
-    public class PocketShieldAPI
+    public class PocketShieldAPIV2
     {
         /// <summary> Determines which side returned for a specific request. </summary>
-        public enum ReturnSide { Server, Client }
+        public enum ReturnSide { Server = 1 << 0, Client = 1 << 1 }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public class ShieldEmitterStats
+        {
+
+        }
 
         /// <summary>
         /// Basic properties used to construct a ShieldEmitter.
         /// ShieldEmitter will not be construct without these properties passed to the constructor. </summary>
         public class ShieldEmitterProperties
         {
-            public ImmutableList<object> Data { get { return m_Data.ToImmutableList(); } }
-
+            #region Public Properties
             /// <summary> 
             /// SubtypeId of shield emitter item in inventory.
             /// This is used to differentiate between ShieldEmitter types. </summary>
@@ -76,10 +93,12 @@ namespace PocketShieldCore
                 set { m_Data[0] = value; }
             }
 
-            /// <summary> Max number of Plugins that this Emitter supports. </summary>
-            public int MaxPluginsCount
+            /// <summary>
+            /// Determine if this ShieldEmitter is a manual one.
+            /// A Manual Emitter only emit shield when active (manually). </summary>
+            public bool IsManual
             {
-                get { return (int)m_Data[1]; }
+                get { return (bool)m_Data[1]; }
                 set { m_Data[1] = value; }
             }
 
@@ -132,36 +151,29 @@ namespace PocketShieldCore
                 set { m_Data[8] = value; }
             }
 
+            /// <summary> Max number of Plugins that this Emitter supports. </summary>
+            public int MaxPluginsCount
+            {
+                get { return (int)m_Data[9]; }
+                set { m_Data[9] = value; }
+            }
+
             /// <summary> A list of Base Defense against each damage type. </summary>
             public Dictionary<MyStringHash, float> BaseDef
             {
-                get { return (Dictionary<MyStringHash, float>)m_Data[9]; }
+                get { return (Dictionary<MyStringHash, float>)m_Data[10]; }
             }
 
             /// <summary> A list of Base Resistance against each damage type. </summary>
             public Dictionary<MyStringHash, float> BaseRes
             {
-                get { return (Dictionary<MyStringHash, float>)m_Data[10]; }
+                get { return (Dictionary<MyStringHash, float>)m_Data[11]; }
             }
-
-            private readonly List<object> m_Data = new List<object>()
-            {
-                MyStringHash.NullOrEmpty,               /* SubtypeId */
-                0,                                      /* MaxPluginsCount */
-                0.0f,                                   /* BaseMaxEnergy */
-                0.0f,                                   /* BaseChargeRate */
-                0.0f,                                   /* BaseChargeDelay */
-                0.0f,                                   /* BaseOverchargeDuration */
-                0.0f,                                   /* BaseOverchargeDefBonus */
-                0.0f,                                   /* BaseOverchargeResBonus */
-                0.0,                                    /* BasePowerConsumption */
-                new Dictionary<MyStringHash, float>(),  /* BaseDef */
-                new Dictionary<MyStringHash, float>()   /* BaseRes */
-            };
+            #endregion
 
             /// <summary> Construct a ShieldEmitterProperties object from a set of data. Data will not be validate. </summary>
             /// <param name="_data"> Data to be copied </param>
-            public ShieldEmitterProperties(IList<object> _data)
+            public ShieldEmitterProperties(List<object> _data)
             {
                 if (_data != null)
                 {
@@ -178,6 +190,7 @@ namespace PocketShieldCore
             {
                 SubtypeId = MyStringHash.NullOrEmpty;
 
+                IsManual = false;
                 MaxPluginsCount = 0;
                 BaseMaxEnergy = 0.0f;
                 BaseChargeRate = 0.0f;
@@ -194,7 +207,7 @@ namespace PocketShieldCore
             /// <summary> Replaces this ShieldEmitterProperties object with a set of data.
             /// This method doesn't allocate memory. Data will not be validated </summary>
             /// <param name="_data"> Data to be copied </param>
-            public void ReplaceData(IList<object> _data)
+            public void ReplaceData(List<object> _data)
             {
                 if (_data == null)
                     Clear();
@@ -205,6 +218,27 @@ namespace PocketShieldCore
                 }
             }
 
+            #region Internal Stuff
+            /// <summary> Raw data. Do not modify this list. </summary>
+            public List<object> RawData { get { return m_Data; } }
+
+            private readonly List<object> m_Data = new List<object>()
+            {
+                MyStringHash.NullOrEmpty,               /* SubtypeId */
+                false,                                  /* IsManual */
+                0.0f,                                   /* BaseMaxEnergy */
+                0.0f,                                   /* BaseChargeRate */
+                0.0f,                                   /* BaseChargeDelay */
+                0.0f,                                   /* BaseOverchargeDuration */
+                0.0f,                                   /* BaseOverchargeDefBonus */
+                0.0f,                                   /* BaseOverchargeResBonus */
+                0.0,                                    /* BasePowerConsumption */
+                0,                                      /* MaxPluginsCount */
+                new Dictionary<MyStringHash, float>(),  /* BaseDef */
+                new Dictionary<MyStringHash, float>()   /* BaseRes */
+            };
+            #endregion
+
         }
 
         /// <summary>
@@ -212,8 +246,7 @@ namespace PocketShieldCore
         /// If no data is supplied, a default icon will be drawn. </summary>
         public class ShieldIconDrawInfo
         {
-            public ImmutableList<object> Data { get { return m_Data.ToImmutableList(); } }
-
+            #region Public Properties
             /// <summary> 
             /// SubtypeId of shield emitter to assign to.
             /// This is used to differentiate icons between ShieldEmitter types. </summary>
@@ -248,19 +281,11 @@ namespace PocketShieldCore
                 get { return (Vector2)m_Data[4]; }
                 set { m_Data[4] = value; }
             }
-
-            private readonly List<object> m_Data = new List<object>()
-            {
-                MyStringHash.NullOrEmpty,   /* SubtypeId */
-                MyStringId.NullOrEmpty,     /* Material */
-                false,                      /* UvEnabled */
-                Vector2.Zero,               /* UvSize */
-                Vector2.Zero                /* UvOffset */
-            };
+            #endregion
 
             /// <summary> Construct a ShieldIconDrawInfo object from a set of data. Data will not be validate. </summary>
             /// <param name="_data"> Data to be copied </param>
-            public ShieldIconDrawInfo(IList<object> _data)
+            public ShieldIconDrawInfo(List<object> _data)
             {
                 if (_data != null)
                 {
@@ -271,40 +296,28 @@ namespace PocketShieldCore
                 }
             }
 
-            /// <summary> Clears this ShieldIconDrawInfo object (resets everything to 0) without destroy the object.
-            /// This is useful when you want to clear a cached the object allocation. </summary>
-            public void Clear()
-            {
-                SubtypeId = MyStringHash.NullOrEmpty;
-                Material = MyStringId.NullOrEmpty;
-                UvEnabled = false;
-                UvSize = Vector2.Zero;
-                UvOffset = Vector2.Zero;
-            }
+            #region Internal Stuff
+            /// <summary> Raw data. Do not modify this list. </summary>
+            public List<object> RawData { get { return m_Data; } }
 
-            /// <summary> Replaces this ShieldIconDrawInfo object with a set of data.
-            /// This method doesn't allocate memory. Data will not be validated </summary>
-            /// <param name="_data"> Data to be copied </param>
-            public void ReplaceData(IList<object> _data)
+            private readonly List<object> m_Data = new List<object>()
             {
-                if (_data == null)
-                    Clear();
-
-                for (int i = 0; i < m_Data.Count && i < _data.Count; ++i)
-                {
-                    m_Data[i] = _data[i];
-                }
-            }
+                MyStringHash.NullOrEmpty,   /* SubtypeId */
+                MyStringId.NullOrEmpty,     /* Material */
+                false,                      /* UvEnabled */
+                Vector2.Zero,               /* UvSize */
+                Vector2.Zero                /* UvOffset */
+            };
+            #endregion
 
         }
 
         /// <summary>
         /// Basic properties used to draw a Defense/Resistance stat item card for a specific damage type.
         /// If no data is supplied, this damage type's stat will not be displayed. </summary>
-        public class ItemCardDrawInfo
+        public class StatIconDrawInfo
         {
-            public ImmutableList<object> Data { get { return m_Data.ToImmutableList(); } }
-
+            #region Public Properties
             /// <summary> Damage type of this icon(s). </summary>
             public MyStringHash DamageType
             {
@@ -337,19 +350,11 @@ namespace PocketShieldCore
                 get { return (Vector2)m_Data[4]; }
                 set { m_Data[4] = value; }
             }
-
-            private readonly List<object> m_Data = new List<object>()
-            {
-                MyStringHash.NullOrEmpty,   /* SubtypeId */
-                MyStringId.NullOrEmpty,     /* Material */
-                false,                      /* UvEnabled */
-                Vector2.Zero,               /* UvSize */
-                Vector2.Zero                /* UvOffset */
-            };
+            #endregion
 
             /// <summary> Construct a ItemCardDrawInfo object from a set of data. Data will not be validate. </summary>
             /// <param name="_data"> Data to be copied </param>
-            public ItemCardDrawInfo(IList<object> _data)
+            public StatIconDrawInfo(List<object> _data)
             {
                 if (_data != null)
                 {
@@ -360,45 +365,27 @@ namespace PocketShieldCore
                 }
             }
 
-            /// <summary> Clears this ItemCardDrawInfo object (resets everything to 0) without destroy the object.
-            /// This is useful when you want to clear a cached the object allocation. </summary>
-            public void Clear()
-            {
-                DamageType = MyStringHash.NullOrEmpty;
-                Material = MyStringId.NullOrEmpty;
-                UvEnabled = false;
-                UvSize = Vector2.Zero;
-                UvOffset = Vector2.Zero;
-            }
+            #region Internal Stuff
+            /// <summary> Raw data. Do not modify this list. </summary>
+            public List<object> RawData { get { return m_Data; } }
 
-            /// <summary> Replaces this ItemCardDrawInfo object with a set of data.
-            /// This method doesn't allocate memory. Data will not be validated </summary>
-            /// <param name="_data"> Data to be copied </param>
-            public void ReplaceData(IList<object> _data)
+            private readonly List<object> m_Data = new List<object>()
             {
-                if (_data == null)
-                    Clear();
-
-                for (int i = 0; i < m_Data.Count && i < _data.Count; ++i)
-                {
-                    m_Data[i] = _data[i];
-                }
-            }
+                MyStringHash.NullOrEmpty,   /* SubtypeId */
+                MyStringId.NullOrEmpty,     /* Material */
+                false,                      /* UvEnabled */
+                Vector2.Zero,               /* UvSize */
+                Vector2.Zero                /* UvOffset */
+            };
+            #endregion
 
         }
 
+        public const long MOD_ID = 2739353433L; // Core mod's ID;
 
-        #region Internal Stuff
-        public const long MOD_ID = 2739353433L;
-
-        public const string STR_API_VERSION = "Ver1";
-        public const string STR_REGISTER_MOD = "RegMod";
-        public const string STR_UNREGISTER_MOD = "UnRegMod";
-        public const string STR_INTERNAL_REGISTER_CALLBACK = "RegEvt";
-        public const string STR_INTERNAL_UNREGISTER_CALLBACK = "UnRegEvt";
-        #endregion
-
-        public const string VERSION = "1.0";
+        public const string SERVER_BACKEND_VERSION = "2.0";
+        public const string CLIENT_BACKEND_VERSION = "2.0";
+        public const string STR_API_VERSION = "Ver2";
 
         /// <summary> Flag to determine if PocketShieldAPI is registered server-side and ready or not. </summary>
         public static bool ServerReady { get { if (s_Instance != null) return s_Instance.m_IsServerReady; return false; } }
@@ -412,28 +399,6 @@ namespace PocketShieldCore
         /// <summary> Backend API version. </summary>
         private static string ClientBackendVersion = "";
 
-        /// <summary> Stores error message on LAST ERROR OCCURED. Successfull operation will not clear this message. </summary>
-        public static string LastErrorMessage { get; private set; }
-
-        private static PocketShieldAPI s_Instance = null;
-        private static string s_ModInfo = "";
-
-        private bool m_IsServerReady = false;
-        private bool m_IsClientReady = false;
-
-        private Action<ReturnSide> m_RegisterFinishedCallback = null;
-
-        private List<Func<MyStringHash, IList<object>>> m_RegisteredMethods = new List<Func<MyStringHash, IList<object>>>();
-        private List<Delegate> m_ApiMethods = null;
-        /// <summary> 
-        /// Stores Plugins' Bonus modifier accross all mod that use PocketShield.<br/>
-        /// Do NOT modify this member, it will affect other mod's registered data and may crash them.
-        /// Use GetPluginModifier() and SetPluginModifier() instead. </summary>
-        private Dictionary<MyStringHash, float> m_PluginBonusModifiers = null;
-
-        private List<IList<object>> m_ShieldIconList = null;
-        private List<IList<object>> m_ItemCardList = null;
-
 
         /// <summary>
         /// Initialize PocketShieldAPI and register with Core mod.
@@ -441,12 +406,17 @@ namespace PocketShieldCore
         /// You can pass a callback for when register is done. <summary>
         /// <param name="_modInfo"> A string to identify your mod </param>
         /// <param name="_registerFinishedCallback"> A callback to call when register is done </param>
-        public static void Init(string _modInfo, Action<ReturnSide> _registerFinishedCallback = null)
+        /// <param name="_logCallback"> A Log function to call when the API want to log something (you need to provide the "write" function) </param>
+        public static void Init(string _modInfo, Action<ReturnSide> _registerFinishedCallback = null, Action<string> _logCallback = null)
         {
-            MyAPIGateway.Utilities.RegisterMessageHandler(MOD_ID, PocketShieldAPI_ModRegisterReturnHandle);
+            _logCallback?.Invoke(STR_LOG_PREFIX + "PocketShield API is initializing");
 
-            s_Instance = new PocketShieldAPI(_modInfo, _registerFinishedCallback);
+            MyAPIGateway.Utilities.RegisterMessageHandler(MOD_ID, PocketShieldAPIV2_ModRegisterReturnHandle);
+
+            s_Instance = new PocketShieldAPIV2(_modInfo, _registerFinishedCallback, _logCallback);
             MyAPIGateway.Utilities.SendModMessage(MOD_ID, STR_REGISTER_MOD + STR_API_VERSION + "=" + _modInfo);
+
+            s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API initialization done");
         }
 
         /// <summary> Unregister PocketShieldAPI from Core mod.
@@ -454,13 +424,10 @@ namespace PocketShieldCore
         /// <returns> Always true </returns>
         public static bool Close()
         {
+            s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API is shutting down");
             if (ServerReady)
             {
-                for (int i = s_Instance.m_RegisteredMethods.Count - 1; i >= 0; --i)
-                {
-                    if (UnRegisterEmitterPropertiesConstructCallback(s_Instance.m_RegisteredMethods[i]))
-                    { }
-                }
+
             }
 
             if (ClientReady)
@@ -468,150 +435,184 @@ namespace PocketShieldCore
 
             }
 
-            MyAPIGateway.Utilities.SendModMessage(MOD_ID, STR_UNREGISTER_MOD + "=" + s_ModInfo);
-            MyAPIGateway.Utilities.UnregisterMessageHandler(MOD_ID, PocketShieldAPI_ModRegisterReturnHandle);
+            MyAPIGateway.Utilities.SendModMessage(MOD_ID, STR_UNREGISTER_MOD + "=" + s_Instance.m_ModInfo);
+            MyAPIGateway.Utilities.UnregisterMessageHandler(MOD_ID, PocketShieldAPIV2_ModRegisterReturnHandle);
 
-            if (s_Instance != null)
-            {
-                s_Instance.m_IsServerReady = false;
-                s_Instance.m_IsClientReady = false;
-                s_Instance = null;
-            }
+            s_Instance.m_IsServerReady = false;
+            s_Instance.m_IsClientReady = false;
 
+            s_Instance = null;
+
+            s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API shut down");
             return true;
         }
 
         #region Server-side API Methods
-        /// <summary> Register a callback that compiles ShieldEmitterProperties to be used when constructing a ShieldEmitter. </summary>
-        /// <param name="_callback"> A function that compiles ShieldEmitterProperties and returns it as an object array </param>
-        /// <returns> False when API is not Ready, otherwise true </returns>
-        public static bool RegisterCompileEmitterPropertiesCallback(Func<MyStringHash, IList<object>> _callback)
+        public static bool Server_RegisterEmitter(MyStringHash _subtypeId, ShieldEmitterProperties _properties)
         {
             if (!ServerReady)
             {
-                LastErrorMessage = "PocketShield API (server) is not initialized";
+                s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API (server) is not initialized");
                 return false;
             }
 
-            s_Instance.m_ApiMethods.Add(_callback);
-            s_Instance.m_RegisteredMethods.Add(_callback);
-            return true;
-        }
-
-        /// <summary> Unregister a callback that was registered previously using RegisterCompileEmitterPropertiesCalback(). </summary>
-        /// <param name="_callback"> Previously registered callback </param>
-        /// <returns> False when API is not Ready, otherwise true </returns>
-        public static bool UnRegisterEmitterPropertiesConstructCallback(Func<MyStringHash, IList<object>> _callback)
-        {
-            if (!ServerReady)
-            {
-                LastErrorMessage = "PocketShield API (server) is not initialized";
+            if (_properties == null)
                 return false;
-            }
 
-            s_Instance.m_ApiMethods.Remove(_callback);
-            s_Instance.m_RegisteredMethods.Remove(_callback);
+            s_Instance.m_Ref_EmitterConstructionData[_subtypeId] = _properties.RawData;
             return true;
         }
 
-        public static float GetPluginModifier(MyStringHash _subtypeId)
+        public static float Server_GetPluginModifier(MyStringHash _subtypeId)
         {
             if (!ServerReady)
             {
-                LastErrorMessage = "PocketShield API is not initialized";
+                s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API (server) is not initialized");
                 return 0.0f;
             }
 
-            if (s_Instance.m_PluginBonusModifiers.ContainsKey(_subtypeId))
-                return s_Instance.m_PluginBonusModifiers[_subtypeId];
+            if (s_Instance.m_Ref_PluginBonusModifiers.ContainsKey(_subtypeId))
+                return s_Instance.m_Ref_PluginBonusModifiers[_subtypeId];
 
             return 0.0f;
         }
 
-        public static void SetPluginModifier(MyStringHash _subtypeId, float _value)
+        public static bool Server_SetPluginModifier(MyStringHash _subtypeId, float _value)
         {
             if (!ServerReady)
             {
-                LastErrorMessage = "PocketShield API is not initialized";
-                return;
+                s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API (server) is not initialized");
+                return false;
             }
 
-            s_Instance.m_PluginBonusModifiers[_subtypeId] = _value;
+            s_Instance.m_Ref_PluginBonusModifiers[_subtypeId] = _value;
+            return true;
+        }
+
+        public static bool Server_ActivateManualShield(long _character, bool _isActivate)
+        {
+            if (!ServerReady)
+            {
+                s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API (server) is not initialized");
+                return false;
+            }
+
+            ((Action<long, bool>)s_Instance.m_Ref_ExposedFunctions[0]).Invoke(_character, _isActivate);
+            return true;
+        }
+
+        public static bool Server_TurnShieldOnOff(long _character, bool _turnOn, bool _isManualShield)
+        {
+            if (!ServerReady)
+            {
+                s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API (server) is not initialized");
+                return false;
+            }
+
+            ((Action<long, bool, bool>)s_Instance.m_Ref_ExposedFunctions[1]).Invoke(_character, _turnOn, _isManualShield);
+            return true;
         }
         #endregion
+
 
         #region Client-side API Methods
         /// <summary> Register a custom shield icon to be drawn on HUD Panel. </summary>
         /// <param name="_data"> Data for a custom shield icon </param>
         /// <returns> False when API is not Ready, otherwise true </returns>
-        public static bool RegisterShieldIcon(ShieldIconDrawInfo _data)
+        public static bool Client_RegisterShieldIcon(ShieldIconDrawInfo _data)
         {
             if (!ClientReady)
             {
-                LastErrorMessage = "PocketShield API (client) is not initialized";
+                s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API (Client) is not initialized");
                 return false;
             }
 
-            s_Instance.m_ShieldIconList.Add(_data.Data);
+            s_Instance.m_Ref_ShieldIconList.Add(_data.RawData);
             return true;
         }
 
         /// <summary> Register a set of two icons for Defense and Resistance stat for a single damage type, that will be drawn on HUD Panel. </summary>
         /// <param name="_data"> Data for a set of two icons </param>
         /// <returns> False when API is not Ready, otherwise true </returns>
-        public static bool RegisterStatIcons(ItemCardDrawInfo _data)
+        public static bool Client_RegisterStatIcon(StatIconDrawInfo _data)
         {
             if (!ClientReady)
             {
-                LastErrorMessage = "PocketShield API (client) is not initialized";
+                s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API (Client) is not initialized");
                 return false;
             }
 
-            s_Instance.m_ItemCardList.Add(_data.Data);
+            s_Instance.m_Ref_StatIconList.Add(_data.RawData);
             return true;
         }
         #endregion
 
+
+
+
         #region Internal Stuff
-        private PocketShieldAPI(string _modInfo, Action<ReturnSide> _registerFinishedCallback = null)
+        private const string STR_LOG_PREFIX = "[PocketShieldAPIV2] ";
+        private const string STR_REGISTER_MOD = "RegMod";
+        private const string STR_UNREGISTER_MOD = "UnRegMod";
+        private const string STR_INTERNAL_REGISTER_CALLBACK = "RegEvt";
+        private const string STR_INTERNAL_UNREGISTER_CALLBACK = "UnRegEvt";
+
+        private static PocketShieldAPIV2 s_Instance = null;
+        private static Action<string> s_LogFunc = null;
+
+        private string m_ModInfo = "";
+        private bool m_IsServerReady = false;
+        private bool m_IsClientReady = false;
+
+        private Action<ReturnSide> m_RegisterFinishedCallback = null;
+
+        private Dictionary<MyStringHash, List<object>> m_Ref_EmitterConstructionData = null;
+        private Dictionary<MyStringHash, float> m_Ref_PluginBonusModifiers = null;
+        private List<List<object>> m_Ref_ShieldIconList = null;
+        private List<List<object>> m_Ref_StatIconList = null;
+        private List<Delegate> m_Ref_ExposedFunctions = null;
+
+        private PocketShieldAPIV2(string _modInfo, Action<ReturnSide> _registerFinishedCallback, Action<string> _logCallback)
         {
             ServerBackendVersion = "";
             ClientBackendVersion = "";
-            LastErrorMessage = "";
 
-            s_ModInfo = _modInfo;
+            m_ModInfo = _modInfo;
             m_RegisterFinishedCallback = _registerFinishedCallback;
+            s_LogFunc = _logCallback;
         }
 
-        private static void PocketShieldAPI_ModRegisterReturnHandle(object _payload)
+        private static void PocketShieldAPIV2_ModRegisterReturnHandle(object _payload)
         {
             // this one should not happens;
             if (s_Instance == null)
                 return;
+
             if (_payload == null)
                 return;
 
-            if (_payload is MyTuple<string, List<Delegate>, Dictionary<MyStringHash, float>>)
+            if (_payload is ServerData)
             {
                 if (ServerReady)
                 {
-                    LastErrorMessage = "PocketShieldAPI (server) is already initialized";
+                    s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShield API (server) is already initialized");
                     return;
                 }
 
-                var data = (MyTuple<string, List<Delegate>, Dictionary<MyStringHash, float>>)_payload;
-                if (!data.Item1.StartsWith("Server") || data.Item2 == null || data.Item3 == null)
+                var data = (ServerData)_payload;
+                if (!data.Item1.StartsWith("Server") || data.Item2 == null || data.Item3 == null || data.Item4 == null)
                 {
-                    LastErrorMessage = "Data received from Server APIBackend, but it seems to be corrupted";
+                    s_LogFunc?.Invoke(STR_LOG_PREFIX + "Data received from Server APIBackend, but it seems to be corrupted");
                     return;
                 }
 
                 ServerBackendVersion = data.Item1.Substring(13);
-                if (ServerBackendVersion != VERSION)
-                    LastErrorMessage = "API Version mismatch, you should update your PocketShieldAPI.cs file, or things may break";
+                if (ServerBackendVersion != SERVER_BACKEND_VERSION)
+                    s_LogFunc?.Invoke(STR_LOG_PREFIX + "API Version mismatch (current: " + SERVER_BACKEND_VERSION + ", latest: " + ServerBackendVersion + "), you should update your PocketShieldAPI.cs file, or things may break");
 
-                s_Instance.m_ApiMethods = data.Item2;
-                s_Instance.m_PluginBonusModifiers = data.Item3;
+                s_Instance.m_Ref_EmitterConstructionData = data.Item2;
+                s_Instance.m_Ref_PluginBonusModifiers = data.Item3;
+                s_Instance.m_Ref_ExposedFunctions = data.Item4;
                 s_Instance.m_IsServerReady = true;
 
                 s_Instance.m_RegisterFinishedCallback?.Invoke(ReturnSide.Server);
@@ -619,33 +620,38 @@ namespace PocketShieldCore
                 return;
             }
 
-            if (_payload is MyTuple<string, List<IList<object>>, List<IList<object>>>)
+            if (_payload is ClientData)
             {
                 if (ClientReady)
                 {
-                    LastErrorMessage = "PocketShieldAPI (client) is already initialized";
+                    s_LogFunc?.Invoke(STR_LOG_PREFIX + "PocketShieldAPI (client) is already initialized");
                     return;
                 }
 
-                var data = (MyTuple<string, List<IList<object>>, List<IList<object>>>)_payload;
+                var data = (ClientData)_payload;
                 if (!data.Item1.StartsWith("Client") || data.Item2 == null || data.Item3 == null)
                 {
-                    LastErrorMessage = "Data received from Client APIBackend, but it seems to be corrupted";
+                    s_LogFunc?.Invoke(STR_LOG_PREFIX + "Data received from Client APIBackend, but it seems to be corrupted");
                     return;
                 }
 
                 ClientBackendVersion = data.Item1.Substring(13);
-                if (ClientBackendVersion != VERSION)
-                    LastErrorMessage = "API Version mismatch, you should update your PocketShieldAPI.cs file, or things may break";
+                if (ClientBackendVersion != CLIENT_BACKEND_VERSION)
+                    s_LogFunc?.Invoke(STR_LOG_PREFIX + "API Version mismatch (current: " + CLIENT_BACKEND_VERSION + ", latest: " + ClientBackendVersion + "), you should update your PocketShieldAPI.cs file, or things may break");
 
-                s_Instance.m_ShieldIconList = data.Item2;
-                s_Instance.m_ItemCardList = data.Item3;
+                s_Instance.m_Ref_ShieldIconList = data.Item2;
+                s_Instance.m_Ref_StatIconList = data.Item3;
                 s_Instance.m_IsClientReady = true;
 
                 s_Instance.m_RegisterFinishedCallback?.Invoke(ReturnSide.Client);
 
                 return;
             }
+        }
+
+        private static void PocketShieldAPIV2_EmitterListUpdateCallback()
+        {
+
         }
         #endregion
 

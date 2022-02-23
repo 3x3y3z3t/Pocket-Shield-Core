@@ -32,12 +32,25 @@ namespace PocketShieldCore
 
         private ShieldHudPanel m_ShieldHudPanel = null;
         private HudAPIv2 m_TextHudAPI = null;
-
-        private MyShieldData m_ShieldData = new MyShieldData() { DefResList = new Dictionary<MyStringHash, DefResPair>(MyStringHash.Comparer) };
+        
+        private MyShieldData m_ManualShieldData = null;
+        private MyShieldData m_AutoShieldData = null;
 
         public override void LoadData()
         {
+            IsServer = MyAPIGateway.Multiplayer.IsServer;
+            IsDedicated = IsServer && MyAPIGateway.Utilities.IsDedicated;
+
             m_Logger = new Logger("client");
+            m_Logger.WriteLine("  IsServer = " + IsServer);
+            m_Logger.WriteLine("  IsDedicated = " + IsDedicated);
+
+            if (IsDedicated)
+                return;
+
+            m_ManualShieldData = new MyShieldData();
+            m_AutoShieldData = new MyShieldData() { DefResList = new Dictionary<MyStringHash, DefResPair>(MyStringHash.Comparer) };
+
             m_Config = new ClientConfig("client_config.ini", m_Logger);
 
             m_Logger.LogLevel = m_Config.LogLevel;
@@ -47,44 +60,42 @@ namespace PocketShieldCore
             MyAPIGateway.Gui.GuiControlRemoved += Gui_GuiControlRemoved;
 
             MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
-            MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(Constants.MSG_HANDLER_ID_SYNC, Sync_HandleSyncShieldData);
+            MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(Constants.SYNC_ID_TO_CLIENT, Sync_ReceiveDataFromServer);
 
         }
 
         protected override void UnloadData()
         {
-            m_Logger.WriteLine("Shutting down..");
-
-            foreach (string mod in m_ApiBackend_RegisteredMod)
+            if (!IsDedicated)
             {
-                m_Logger.WriteLine("  > Warning < Mod " + mod + " has not called DeInit() yet");
+                m_Logger.WriteLine("Shutting down..");
+
+                foreach (string mod in m_ApiBackend_RegisteredMod)
+                    m_Logger.WriteLine("  > Warning < Mod " + mod + " has not called DeInit() yet");
+
+                MyAPIGateway.Gui.GuiControlRemoved -= Gui_GuiControlRemoved;
+
+                MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
+                MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(Constants.SYNC_ID_TO_CLIENT, Sync_ReceiveDataFromServer);
+
+                if (m_TextHudAPI != null)
+                    m_TextHudAPI.Close();
+
+                m_Logger.WriteLine("Shutdown Done");
             }
-
-            MyAPIGateway.Gui.GuiControlRemoved -= Gui_GuiControlRemoved;
-            //MyAPIGateway.Utilities.MessageEntered -= ChatCommand_MessageEnteredHandle;
-
-            MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
-            MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(Constants.MSG_HANDLER_ID_SYNC, Sync_HandleSyncShieldData);
 
             ShieldHudPanel.CleanupStatics();
 
-            if (m_TextHudAPI != null)
-                m_TextHudAPI.Close();
-            
-            m_Logger.WriteLine("Shutdown Done");
             m_Logger.Close();
         }
 
         public override void BeforeStart()
         {
-            IsServer = (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE || MyAPIGateway.Multiplayer.IsServer);
-            IsDedicated = IsServer && MyAPIGateway.Utilities.IsDedicated;
             if (IsDedicated)
                 return;
 
             m_TextHudAPI = new HudAPIv2(InitTextHudCallback);
             ShieldHudPanel.Debug = false;
-            //ApiBackend_LogRegisteredMod();
 
             m_Logger.WriteLine("  IsServer = " + IsServer);
             m_Logger.WriteLine("  IsDedicated = " + IsDedicated);
@@ -95,14 +106,14 @@ namespace PocketShieldCore
 
         public override void UpdateAfterSimulation()
         {
+            if (!m_IsSetupDone)
+                return;
+            
             ++m_Ticks;
             // clear ticks count;
             if (m_Ticks >= 2000000000)
                 m_Ticks -= 2000000000;
 
-            if (!m_IsSetupDone)
-                return;
-            
             if (m_Ticks % m_Config.ClientUpdateInterval == 0)
             {
                 if (!m_IsTextHudModMissingConfirmed && !m_TextHudAPI.Heartbeat && m_Ticks >= 300)
@@ -152,6 +163,9 @@ namespace PocketShieldCore
 
         public override void Draw()
         {
+            if (IsDedicated)
+                return;
+
             // gets called 60 times a second after all other update methods, regardless of framerate, game pause or MyUpdateOrder.
             // NOTE: this is the only place where the camera matrix (MyAPIGateway.Session.Camera.WorldMatrix) is accurate, everywhere else it's 1 frame behind.
 
@@ -182,7 +196,7 @@ namespace PocketShieldCore
 
             UpdateHudConfigs();
 
-            m_ShieldHudPanel = new ShieldHudPanel(m_ShieldData, m_Config, m_Logger);
+            m_ShieldHudPanel = new ShieldHudPanel(m_ManualShieldData, m_AutoShieldData, m_Config, m_Logger);
             m_ShieldHudPanel.CacheIconLists();
             UpdatePanelConfig();
 
@@ -203,8 +217,8 @@ namespace PocketShieldCore
 
         private void UpdateFakeShieldStat()
         {
-            if (!m_ShieldData.HasShield)
-                return;
+            //if (!m_ManualShieldData.HasShield && !m_AutoShieldData.HasShield)
+            //    return;
 
             // TODO: update fake shield stat;
             // this may not be necessary, since server sync shield stat frequently;

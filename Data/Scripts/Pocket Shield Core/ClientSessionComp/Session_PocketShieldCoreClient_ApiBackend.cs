@@ -1,12 +1,12 @@
 ﻿// ;
-using ExShared;
 using Sandbox.ModAPI;
-using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using VRage;
-using VRage.Game.ModAPI;
-using VRage.Utils;
+
+using ClientData = VRage.MyTuple<
+    string,
+    System.Collections.Generic.List<System.Collections.Generic.List<object>>,
+    System.Collections.Generic.List<System.Collections.Generic.List<object>>>;
 
 namespace PocketShieldCore
 {
@@ -27,13 +27,10 @@ namespace PocketShieldCore
                     string modinfo = msg.Substring(PocketShieldAPI.STR_REGISTER_MOD.Length + PocketShieldAPI.STR_API_VERSION.Length + 1);
                     m_ApiBackend_RegisteredMod.Add(modinfo);
 
-                    if (reqVer == "Ver1")
-                    {
-                        ApiBackend_HandleRequestV1();
-                    }
-                    
+                    ApiBackend_HandleRequestV2();
+
                     m_Logger.WriteLine("Registering mod " + modinfo + " (" + reqVer + ")..", 0);
-                    
+
                 }
                 else if (msg.StartsWith(PocketShieldAPI.STR_UNREGISTER_MOD))
                 {
@@ -54,11 +51,11 @@ namespace PocketShieldCore
             }
         }
 
-        private void ApiBackend_HandleRequestV1()
+        private void ApiBackend_HandleRequestV2()
         {
-            MyTuple<string, List<IList<object>>, List<IList<object>>> data = new MyTuple<string, List<IList<object>>, List<IList<object>>>
+            ClientData data = new ClientData()
             {
-                Item1 = "Client Version=" + Constants.API_BACKEND_VERSION,
+                Item1 = "Client Version=" + PocketShieldAPIV2.CLIENT_BACKEND_VERSION,
                 Item2 = ShieldHudPanel.ShieldIconPropertiesList,
                 Item3 = ShieldHudPanel.ItemCardIconPropertiesList
             };
@@ -66,7 +63,7 @@ namespace PocketShieldCore
             m_Logger.WriteLine("SendModMessage (one time)");
             MyAPIGateway.Utilities.SendModMessage(PocketShieldAPI.MOD_ID, data);
         }
-        
+
 
     }
 }

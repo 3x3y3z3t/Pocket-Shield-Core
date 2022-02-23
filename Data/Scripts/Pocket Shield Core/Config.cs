@@ -1,6 +1,5 @@
 ﻿// ;
 using ExShared;
-using Sandbox.ModAPI;
 using System;
 using VRage.Game.ModAPI.Ingame.Utilities;
 using VRageMath;
@@ -22,7 +21,9 @@ namespace PocketShieldCore
         public const string API_BACKEND_VERSION = "1";
 
         #region Server/Client Default Config
-        public const ushort MSG_HANDLER_ID_SYNC = 1351;
+        public const ushort SYNC_ID_TO_CLIENT = 13512;
+        public const ushort SYNC_ID_TO_SERVER = 13513;
+        public const byte TOGGLE_SHIELD_KEY = 135;
 
         public const string SERVER_CONFIG_VERSION = "2";
         public const int SERVER_LOG_LEVEL = 1;

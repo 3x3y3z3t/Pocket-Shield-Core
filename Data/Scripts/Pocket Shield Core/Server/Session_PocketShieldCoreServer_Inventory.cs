@@ -12,8 +12,10 @@ namespace PocketShieldCore
     public partial class Session_PocketShieldCoreServer
     {
         private List<MyStringHash> m_Inventory_Plugins = new List<MyStringHash>();
-        private List<MyStringHash> m_Inventory_UnknownItems = new List<MyStringHash>();
 
+        private MyStringHash m_Inventory_ManualEmitterItems = MyStringHash.NullOrEmpty;
+        private MyStringHash m_Inventory_AutoEmitterItems = MyStringHash.NullOrEmpty;
+        
         private void Inventory_ContentsChangedHandle(MyInventoryBase _inventory)
         {
             IMyCharacter character = _inventory.Container.Entity as IMyCharacter;
@@ -42,10 +44,6 @@ namespace PocketShieldCore
             List<MyPhysicalInventoryItem> InventoryItems = _inventory.GetItems();
             m_Logger.WriteLine("  [" + Utils.GetCharacterName(character) + "]'s inventory now contains " + InventoryItems.Count + " items.", 4);
 
-            ShieldEmitter oldEmitter = null;
-            if (m_ShieldEmitters.ContainsKey(character.EntityId))
-                oldEmitter = m_ShieldEmitters[character.EntityId];
-
             foreach (MyPhysicalInventoryItem item in InventoryItems)
             {
                 MyStringHash subtypeId = item.Content.SubtypeId;
@@ -56,89 +54,159 @@ namespace PocketShieldCore
 
                 if (subtypeId.String.Contains("Emitter"))
                 {
-                    // if another emitter item has been processed before, ignore this emitter item;
-                    if (m_FirstEmitterFound != null)
+                    if (!m_ShieldManager_EmitterConstructionData.ContainsKey(subtypeId))
                         continue;
 
-                    if (oldEmitter == null)
+                    m_CachedProps.ReplaceData(m_ShieldManager_EmitterConstructionData[subtypeId]);
+                    if (m_CachedProps.IsManual)
                     {
-                        m_Logger.WriteLine("    Old Emitter is null, try creating Emitter..", 4);
-                        ShieldFactory_TryCreateEmitter(subtypeId, character);
-                        if (m_FirstEmitterFound != null)
+                        if (m_Inventory_ManualEmitterItems == MyStringHash.NullOrEmpty)
                         {
-                            ShieldFactory_ReplaceEmitter(character, m_FirstEmitterFound);
-                            oldEmitter = m_FirstEmitterFound;
-                            m_Logger.WriteLine("    Emitter Created: " + m_FirstEmitterFound.SubtypeId.String, 4);
-                            m_Logger.WriteLine("    Old Emitter:     " + oldEmitter.SubtypeId.String, 4);
-                            m_Logger.WriteLine("    Emitter count: " + m_ShieldEmitters.Count, 4);
+                            m_Logger.WriteLine("    Accepted Manual Emitter " + subtypeId, 4);
+                            m_Inventory_ManualEmitterItems = subtypeId;
                         }
                     }
                     else
                     {
-                        m_Logger.WriteLine("    Old Emitter: " + oldEmitter.SubtypeId.String, 4);
-                        if (oldEmitter.SubtypeId != subtypeId)
+                        if (m_Inventory_AutoEmitterItems == MyStringHash.NullOrEmpty)
                         {
-                            m_Logger.WriteLine("    Try creating new Emitter..", 4);
-                            ShieldFactory_TryCreateEmitter(subtypeId, character);
-                            //ShieldFactory_TryCreateEmitterDel(subtypeId, character);
-
-                            if (m_FirstEmitterFound != null)
-                            {
-                                ShieldFactory_ReplaceEmitter(character, m_FirstEmitterFound);
-                                oldEmitter = m_FirstEmitterFound;
-                                m_Logger.WriteLine("    Emitter Created: " + m_FirstEmitterFound.SubtypeId.String, 4);
-                                m_Logger.WriteLine("    Old Emitter:     " + oldEmitter.SubtypeId.String, 4);
-                                m_Logger.WriteLine("    Emitter count: " + m_ShieldEmitters.Count, 4);
-                            }
-                        }
-                        else
-                        {
-                            m_FirstEmitterFound = oldEmitter;
+                            m_Logger.WriteLine("    Accepted Auto Emitter " + subtypeId, 4);
+                            m_Inventory_AutoEmitterItems = subtypeId;
                         }
                     }
-
-                    continue;
                 }
-
-                if (subtypeId.String.Contains("Plugin"))
+                else if (subtypeId.String.Contains("Plugin"))
                 {
-                    m_Logger.WriteLine("    Adding Plugin..", 4);
-                    m_Inventory_Plugins.Add(subtypeId);
-                    continue;
+                    m_Logger.WriteLine("    Accepted " + item.Amount + " Plugin", 4);
+                    for (int i = 0; i < item.Amount; ++i)
+                        m_Inventory_Plugins.Add(subtypeId);
                 }
-
-                m_Logger.WriteLine("    Hmm, unknown PocketShield item..", 4);
-                m_Inventory_UnknownItems.Add(subtypeId);
+                else
+                {
+                    m_Logger.WriteLine("    Hmm, unknown PocketShield item " + subtypeId, 4);
+                }
             }
 
-            m_Logger.WriteLine("  Found " + m_Inventory_UnknownItems.Count + " unknown PocketShield items", 4);
-            foreach (MyStringHash subtypeid in m_Inventory_UnknownItems)
-            {
-                m_Logger.WriteLine("    " + subtypeid.String, 4);
-            }
+            ProcessManualEmitter(character);
+            ProcessAutoEmitter(character);
 
-            if (oldEmitter != null && m_FirstEmitterFound == null)
-            {
-                m_Logger.WriteLine("  Emitter dropped: " + oldEmitter.SubtypeId);
-                ShieldFactory_ReplaceEmitter(character, null);
-
-                if (GetPlayerSteamUid(character) != 0U)
-                    m_ForceSyncPlayers.Add(GetPlayerSteamUid(character));
-            }
-
-            if (oldEmitter != null)
-            {
-                oldEmitter.CleanPluginsList();
-                oldEmitter.AddPlugins(m_Inventory_Plugins);
-            }
-
-            m_FirstEmitterFound = null;
+            // cleanup cache;
             m_Inventory_Plugins.Clear();
-            m_Inventory_UnknownItems.Clear();
+            m_Inventory_ManualEmitterItems = MyStringHash.NullOrEmpty;
+            m_Inventory_AutoEmitterItems = MyStringHash.NullOrEmpty;
             return;
         }
 
-        private void Inventory_ManipulateDeadCharacterInventory(MyInventory _inventory)
+        private void ProcessManualEmitter(IMyCharacter _character)
+        {
+            ShieldEmitter oldEmitter = null;
+            ShieldEmitter newEmitter = null;
+
+            m_Logger.WriteLine("  Processing Manual Emitter..", 4);
+            if (m_ShieldManager_CharacterShieldManagers.ContainsKey(_character.EntityId))
+                oldEmitter = m_ShieldManager_CharacterShieldManagers[_character.EntityId].ManualEmitter;
+
+            bool replaced = false;
+            if (oldEmitter == null)
+            {
+                m_Logger.Write("    Old Emitter is null, ", 4);
+                if (m_Inventory_ManualEmitterItems == MyStringHash.NullOrEmpty)
+                {
+                    m_Logger.WriteInline("no new emitter -> do nothing\n", 4);
+                }
+                else
+                {
+                    m_Logger.WriteInline("new emitter detected -> add emitter\n", 4);
+                    newEmitter = ShieldManager_AddNewEmitter(_character, m_Inventory_ManualEmitterItems, true);
+                }
+            }
+            else
+            {
+                m_Logger.Write("    Has old emitter, ", 4);
+                if (m_Inventory_ManualEmitterItems == MyStringHash.NullOrEmpty)
+                {
+                    m_Logger.WriteInline("no new emitter -> drop emitter\n", 4);
+                    ShieldManager_DropEmitter(_character, true);
+                }
+                else
+                {
+                    m_Logger.WriteInline("new emitter detected -> replace emitter or do nothing\n", 4);
+                    if (oldEmitter.SubtypeId == m_Inventory_ManualEmitterItems)
+                        newEmitter = oldEmitter;
+                    else
+                    {
+                        newEmitter = ShieldManager_ReplaceEmitter(_character, m_Inventory_ManualEmitterItems, true);
+                        replaced = true;
+                    }
+                }
+            }
+
+
+            if (newEmitter != null)
+            {
+                if (m_Inventory_Plugins.Count > 0)
+                    newEmitter.AddPlugins(ref m_Inventory_Plugins);
+
+                if (!replaced && m_SaveData != null)
+                    newEmitter.Energy = m_SaveData.GetSavedManualShieldEnergy(_character.EntityId);
+            }
+        }
+
+        private void ProcessAutoEmitter(IMyCharacter _character)
+        {
+            ShieldEmitter oldEmitter = null;
+            ShieldEmitter newEmitter = null;
+
+            m_Logger.WriteLine("  Processing Auto Emitter..", 4);
+            if (m_ShieldManager_CharacterShieldManagers.ContainsKey(_character.EntityId))
+                oldEmitter = m_ShieldManager_CharacterShieldManagers[_character.EntityId].AutoEmitter;
+
+            bool replaced = false;
+            if (oldEmitter == null)
+            {
+                m_Logger.Write("    Old Emitter is null, ", 4);
+                if (m_Inventory_AutoEmitterItems == MyStringHash.NullOrEmpty)
+                {
+                    m_Logger.WriteInline("no new emitter -> do nothing\n", 4);
+                }
+                else
+                {
+                    m_Logger.WriteInline("new emitter detected -> add emitter\n", 4);
+                    newEmitter = ShieldManager_AddNewEmitter(_character, m_Inventory_AutoEmitterItems, false);
+                }
+            }
+            else
+            {
+                m_Logger.Write("    Has old emitter, ", 4);
+                if (m_Inventory_AutoEmitterItems == MyStringHash.NullOrEmpty)
+                {
+                    m_Logger.WriteInline("no new emitter -> drop emitter\n", 4);
+                    ShieldManager_DropEmitter(_character, false);
+                }
+                else
+                {
+                    m_Logger.WriteInline("new emitter detected -> replace emitter or do nothing\n", 4);
+                    if (oldEmitter.SubtypeId == m_Inventory_AutoEmitterItems)
+                        newEmitter = oldEmitter;
+                    else
+                    {
+                        newEmitter = ShieldManager_ReplaceEmitter(_character, m_Inventory_AutoEmitterItems, false);
+                        replaced = true;
+                    }
+                }
+            }
+
+            if (newEmitter != null)
+            {
+                if (m_Inventory_Plugins.Count > 0)
+                    newEmitter.AddPlugins(ref m_Inventory_Plugins);
+
+                if (!replaced && m_SaveData != null)
+                    newEmitter.Energy = m_SaveData.GetSavedAutoShieldEnergy(_character.EntityId);
+            }
+        }
+
+        private void Inventory_ConvertDeadCharacterInventory(MyInventory _inventory)
         {
             NpcInventoryOperation flag = m_Config.NpcInventoryOperationOnDeath;
             float ratio = m_Config.NpcShieldItemToCreditRatio;
@@ -147,30 +215,27 @@ namespace PocketShieldCore
             List<MyPhysicalInventoryItem> items = _inventory.GetItems();
             for (int i = items.Count - 1; i >= 0; --i)
             {
-                if ((items[i].Content.SubtypeId == MyStringHash.GetOrCompute(Constants.SUBTYPEID_EMITTER_BAS) ||
-                     items[i].Content.SubtypeId == MyStringHash.GetOrCompute(Constants.SUBTYPEID_EMITTER_ADV)) &&
-                    (flag & NpcInventoryOperation.RemoveEmitterOnly) != 0)
+                MyPhysicalInventoryItem item = items[i];
+                if (!item.Content.SubtypeId.String.Contains("PocketShield_"))
+                    continue;
+
+                if (item.Content.SubtypeId.String.Contains("Emitter") && (flag & NpcInventoryOperation.RemoveEmitterOnly) != 0)
                 {
                     if (ratio > 0.0f)
                     {
-                        refundAmount += m_CachedPrice[items[i].Content.SubtypeId] * ratio;
-                        m_Logger.WriteLine("Item " + items[i].Content.SubtypeId.String + ": " + m_CachedPrice[items[i].Content.SubtypeId] + " -> " + refundAmount, 4);
+                        refundAmount += m_CachedPrice[item.Content.SubtypeId] * ratio;
+                        m_Logger.WriteLine("Item " + item.Content.SubtypeId.String + ": " + m_CachedPrice[item.Content.SubtypeId] + " -> " + refundAmount, 4);
                     }
                     _inventory.RemoveItemsAt(i, 1, false);
                 }
-                else if ((items[i].Content.SubtypeId == MyStringHash.GetOrCompute(Constants.SUBTYPEID_PLUGIN_CAP) ||
-                          items[i].Content.SubtypeId == MyStringHash.GetOrCompute(Constants.SUBTYPEID_PLUGIN_DEF_KI) ||
-                          items[i].Content.SubtypeId == MyStringHash.GetOrCompute(Constants.SUBTYPEID_PLUGIN_DEF_EX) ||
-                          items[i].Content.SubtypeId == MyStringHash.GetOrCompute(Constants.SUBTYPEID_PLUGIN_RES_KI) ||
-                          items[i].Content.SubtypeId == MyStringHash.GetOrCompute(Constants.SUBTYPEID_PLUGIN_RES_EX)) &&
-                         (flag & NpcInventoryOperation.RemovePluginOnly) != 0)
+                else if (item.Content.SubtypeId.String.Contains("Plugin") && (flag & NpcInventoryOperation.RemovePluginOnly) != 0)
                 {
                     if (ratio > 0.0f)
                     {
-                        refundAmount += m_CachedPrice[items[i].Content.SubtypeId] * ratio;
-                        m_Logger.WriteLine("Item " + items[i].Content.SubtypeId.String + ": " + m_CachedPrice[items[i].Content.SubtypeId] + " -> " + refundAmount, 4);
+                        refundAmount += (float)item.Amount * m_CachedPrice[item.Content.SubtypeId] * ratio;
+                        m_Logger.WriteLine("Item " + item.Content.SubtypeId.String + ": " + m_CachedPrice[item.Content.SubtypeId] + " -> " + refundAmount, 4);
                     }
-                    _inventory.RemoveItemsAt(i, 1, false);
+                    _inventory.RemoveItemsAt(i, item.Amount, false);
                 }
             }
 
@@ -184,14 +249,13 @@ namespace PocketShieldCore
         private void Inventory_UpdatePlayerCharacterInventoryOnceBeforeSim()
         {
             m_Logger.WriteLine(">> UpdatePlayerCharacterInventoryOnceBeforeSim()..", 4);
-            UpdatePlayersList();
-            foreach (IMyPlayer player in m_Players)
+            UpdatePlayersCacheLists();
+            foreach (IMyPlayer player in m_CachedPlayers)
             {
                 m_Logger.WriteLine(">>   Updating player " + player.SteamUserId, 4);
-                if (player.Character == null)
+                if (player.Character == null || !player.Character.HasInventory)
                     continue;
-                if (!player.Character.HasInventory)
-                    continue;
+
                 var inventory = player.Character.GetInventory() as MyInventory;
                 if (inventory == null)
                     continue;

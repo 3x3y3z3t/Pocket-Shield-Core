@@ -17,8 +17,6 @@ namespace PocketShieldCore
 
             if (!_messageText.StartsWith(c_ChatCmdPrefix))
                 return;
-            if (!_messageText.Contains("Server"))
-                return;
 
             m_Logger.WriteLine("  Chat Command captured: " + _messageText, 1);
             ChatCommand_ProcessCommands(_messageText);
@@ -28,7 +26,6 @@ namespace PocketShieldCore
 
         private bool ChatCommand_ProcessCommands(string _commands)
         {
-            _commands = _commands.Remove(_commands.IndexOf("Server"), 6);
             string[] commands = _commands.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             if (commands.Length <= 1)
             {
@@ -39,8 +36,6 @@ namespace PocketShieldCore
             for (int i = 1; i < commands.Length; ++i)
             {
                 string cmd = commands[i].Trim();
-                if (cmd == "Server")
-                    continue;
 
                 m_Logger.WriteLine("    Processing command " + i + ": " + cmd, 1);
                 if (ChatCommand_ProcessSingleCommand(cmd))
@@ -61,8 +56,14 @@ namespace PocketShieldCore
                 {
                     MyAPIGateway.Utilities.ShowNotification("[" + Constants.LOG_PREFIX + "] [Server] Config reloaded", 2000);
                     m_Logger.LogLevel = m_Config.LogLevel;
-                    foreach (var logger in m_ShieldLoggers.Values)
-                        logger.Suppressed = m_Config.SuppressAllShieldLog;
+
+                    foreach (var loggers in m_ShieldManager_ShieldLoggers.Values)
+                    {
+                        if (loggers.Item1 != null)
+                            loggers.Item1.Suppressed = m_Config.SuppressAllShieldLog;
+                        if (loggers.Item2 != null)
+                            loggers.Item2.Suppressed = m_Config.SuppressAllShieldLog;
+                    }
                 }
                 else
                 {
@@ -82,15 +83,15 @@ namespace PocketShieldCore
             }
 
             #region Debug
-            if (_command == "EmitterCount")
-            {
-                m_Logger.WriteLine("      Executing EmitterCount command", 1);
+            //if (_command == "EmitterCount")
+            //{
+            //    m_Logger.WriteLine("      Executing EmitterCount command", 1);
 
-                MyAPIGateway.Utilities.ShowNotification("[" + Constants.LOG_PREFIX + "] [Server] Emitter Cunt: " + m_ShieldEmitters.Count, 5000);
-                m_Logger.WriteLine("    Emitter count: " + m_ShieldEmitters.Count, 1);
+            //    MyAPIGateway.Utilities.ShowNotification("[" + Constants.LOG_PREFIX + "] [Server] Emitter Cunt: " + m_ShieldEmitters.Count, 5000);
+            //    m_Logger.WriteLine("    Emitter count: " + m_ShieldEmitters.Count, 1);
 
-                return true;
-            }
+            //    return true;
+            //}
 
             if (_command == "LoadedCfg")
             {

@@ -184,7 +184,7 @@ namespace PocketShieldCore
             m_PanelPositionItem = new MenuScreenInput(PanelPositionString, m_RootCategory, PanelPositionItemPos, PanelPositionItemSize, PanelPositionHelperString, PanelPositionOnSubmit, PanelPositionUpdate);
             m_ScaleItem = new MenuSliderInput(ScaleString, m_RootCategory, ScaleInitialPercent, "Adjust Slider to modify Scale", ScaleOnSubmit, ConstructScaleHelperString, ScaleOnCancel);
 
-            ModSettings_RefreshMenuInteractability();
+            //ModSettings_RefreshMenuInteractability();
 
             new MenuItem("", m_RootCategory, null, false);
             new MenuItem("——— Load Config ———", m_RootCategory, LoadConfig);
@@ -207,24 +207,23 @@ namespace PocketShieldCore
 
             m_ClientUpdateIntervalItem.Text = ClientUpdateIntervalString;
 
+            m_ShowPanelItem.Text = ShowPanelString;
+
             m_ShowPanelBGItem.Text = ShowPanelBGString;
 
             m_PanelPositionItem.Text = PanelPositionString;
             m_PanelPositionItem.Origin = PanelPositionItemPos;
             m_PanelPositionItem.InputDialogTitle = PanelPositionHelperString;
 
-            ModSettings_RefreshMenuInteractability();
-
             m_ScaleItem.Text = ScaleString;
             m_ScaleItem.InitialPercent = ScaleInitialPercent;
+
+            //ModSettings_RefreshMenuInteractability();
         }
 
         #region Callback Methods
         public void ModSettings_RefreshMenuInteractability()
         {
-            // HACK! user will never get here when mod is disabled, so there is no need to check for .ModEnabled;
-
-            //m_ShowPanelItem.Interactable = config.ShowPanel;
             m_ShowPanelItem.Text = ShowPanelString;
 
             m_ShowPanelBGItem.Interactable = m_Config.ShowPanel;
@@ -277,7 +276,7 @@ namespace PocketShieldCore
             UpdatePanelConfig();
 
             m_ShowPanelItem.Text = ShowPanelString;
-            ModSettings_RefreshMenuInteractability();
+            //ModSettings_RefreshMenuInteractability();
         }
 
         internal void ShowPanelBGOnClick()
