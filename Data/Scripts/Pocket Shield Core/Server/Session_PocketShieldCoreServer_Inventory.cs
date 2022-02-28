@@ -41,16 +41,20 @@ namespace PocketShieldCore
             if (character == null)
                 return;
 
-            List<MyPhysicalInventoryItem> InventoryItems = _inventory.GetItems();
-            m_Logger.WriteLine("  [" + Utils.GetCharacterName(character) + "]'s inventory now contains " + InventoryItems.Count + " items.", 4);
+            List<MyPhysicalInventoryItem> inventoryItems = _inventory.GetItems();
+            m_Logger.WriteLine("  [" + Utils.GetCharacterName(character) + "]'s inventory now contains " + inventoryItems.Count + " items.", 4);
 
-            foreach (MyPhysicalInventoryItem item in InventoryItems)
+            int manualInd = -1;
+            int autoInd = -1;
+            for (int i = 0; i < inventoryItems.Count; ++i)
             {
+                MyPhysicalInventoryItem item = inventoryItems[i];
                 MyStringHash subtypeId = item.Content.SubtypeId;
                 m_Logger.WriteLine("  Processing item " + subtypeId, 4);
 
                 if (!subtypeId.String.Contains("PocketShield_"))
                     continue;
+
 
                 if (subtypeId.String.Contains("Emitter"))
                 {
@@ -64,6 +68,7 @@ namespace PocketShieldCore
                         {
                             m_Logger.WriteLine("    Accepted Manual Emitter " + subtypeId, 4);
                             m_Inventory_ManualEmitterItems = subtypeId;
+                            manualInd = i;
                         }
                     }
                     else
@@ -72,13 +77,14 @@ namespace PocketShieldCore
                         {
                             m_Logger.WriteLine("    Accepted Auto Emitter " + subtypeId, 4);
                             m_Inventory_AutoEmitterItems = subtypeId;
+                            autoInd = i;
                         }
                     }
                 }
                 else if (subtypeId.String.Contains("Plugin"))
                 {
                     m_Logger.WriteLine("    Accepted " + item.Amount + " Plugin", 4);
-                    for (int i = 0; i < item.Amount; ++i)
+                    for (int j = 0; j < item.Amount; ++j)
                         m_Inventory_Plugins.Add(subtypeId);
                 }
                 else
@@ -89,6 +95,14 @@ namespace PocketShieldCore
 
             ProcessManualEmitter(character);
             ProcessAutoEmitter(character);
+            
+            if (m_ShieldManager_CharacterShieldManagers.ContainsKey(character.EntityId))
+            {
+                if (manualInd != -1)
+                    m_ShieldManager_CharacterShieldManagers[character.EntityId].ManualEmitterIndex = manualInd;
+                if (autoInd != -1)
+                    m_ShieldManager_CharacterShieldManagers[character.EntityId].AutoEmitterIndex = autoInd;
+            }
 
             // cleanup cache;
             m_Inventory_Plugins.Clear();
@@ -200,9 +214,12 @@ namespace PocketShieldCore
             {
                 if (m_Inventory_Plugins.Count > 0)
                     newEmitter.AddPlugins(ref m_Inventory_Plugins);
-
+                
                 if (!replaced && m_SaveData != null)
+                {
                     newEmitter.Energy = m_SaveData.GetSavedAutoShieldEnergy(_character.EntityId);
+                    newEmitter.IsTurnedOn = m_SaveData.GetSavedAutoShieldTurnedOn(_character.EntityId);
+                }
             }
         }
 

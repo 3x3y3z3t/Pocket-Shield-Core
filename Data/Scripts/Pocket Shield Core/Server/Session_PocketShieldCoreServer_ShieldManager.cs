@@ -69,10 +69,7 @@ namespace PocketShieldCore
                 m_Logger.WriteLine("Emitter \"Manual\" properties does not match: Emitter is " + emitter.IsManual + ", parameter is " + _isManualEmitter, 1);
                 return null;
             }
-
-            m_Logger.WriteLine("Energy = " + emitter.Energy);
-            m_Logger.WriteLine("Sync = " + emitter.RequireSync);
-
+            
             if (_isManualEmitter)
             {
                 m_ShieldManager_CharacterShieldManagers[_character.EntityId].ManualEmitter = emitter;
@@ -95,6 +92,9 @@ namespace PocketShieldCore
 
         private void ShieldManager_DropEmitter(IMyCharacter _character, bool _isManualEmitter)
         {
+            if (!m_ShieldManager_CharacterShieldManagers.ContainsKey(_character.EntityId))
+                return;
+
             m_Logger.WriteLine("> Dropping Emitter..", 4);
             if (_isManualEmitter)
             {
@@ -242,9 +242,16 @@ namespace PocketShieldCore
 
         public IMyCharacter Character { get; private set; } = null;
         internal PSProjectileDetector ProjectileDetector { get; private set; } = null;
+        
+        public float LastAutoEnergy { get; private set; } = 0.0f;
+        public bool LastAutoTurnedOn { get; private set; } = false;
 
         public ShieldEmitter ManualEmitter = null;
         public ShieldEmitter AutoEmitter = null;
+
+
+        public int ManualEmitterIndex = -1;
+        public int AutoEmitterIndex = -1;
 
         public Logger m_Logger = null;
 
@@ -271,9 +278,16 @@ namespace PocketShieldCore
         public void Update(int _skipTicks)
         {
             if (ManualEmitter != null)
+            {
                 ManualEmitter.Update(_skipTicks);
+            }
+
             if (AutoEmitter != null)
+            {
                 AutoEmitter.Update(_skipTicks);
+                LastAutoEnergy = AutoEmitter.Energy;
+                LastAutoTurnedOn = AutoEmitter.IsTurnedOn;
+            }
 
 
             ProjectileDetector.Update();

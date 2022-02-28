@@ -48,7 +48,7 @@ namespace PocketShieldCore
             if (IsDedicated)
                 return;
 
-            m_ManualShieldData = new MyShieldData();
+            m_ManualShieldData = new MyShieldData() { IsManual = true };
             m_AutoShieldData = new MyShieldData() { DefResList = new Dictionary<MyStringHash, DefResPair>(MyStringHash.Comparer) };
 
             m_Config = new ClientConfig("client_config.ini", m_Logger);
@@ -59,7 +59,7 @@ namespace PocketShieldCore
 
             MyAPIGateway.Gui.GuiControlRemoved += Gui_GuiControlRemoved;
 
-            MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
+            MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPIV2.MOD_ID, ApiBackend_ModMessageHandle);
             MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(Constants.SYNC_ID_TO_CLIENT, Sync_ReceiveDataFromServer);
 
         }
@@ -75,7 +75,7 @@ namespace PocketShieldCore
 
                 MyAPIGateway.Gui.GuiControlRemoved -= Gui_GuiControlRemoved;
 
-                MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
+                MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPIV2.MOD_ID, ApiBackend_ModMessageHandle);
                 MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(Constants.SYNC_ID_TO_CLIENT, Sync_ReceiveDataFromServer);
 
                 if (m_TextHudAPI != null)
@@ -103,7 +103,7 @@ namespace PocketShieldCore
             m_Logger.WriteLine("Setup Done.");
             m_IsSetupDone = true;
         }
-
+        
         public override void UpdateAfterSimulation()
         {
             if (!m_IsSetupDone)
@@ -132,8 +132,8 @@ namespace PocketShieldCore
                     m_ShieldHudPanel.CacheIconLists();
 
                     // HACK!;
-                    s_CachedPanelPositionItemSize.X = m_ShieldHudPanel.PanelSize.X;
-                    s_CachedPanelPositionItemSize.Y = m_ShieldHudPanel.PanelSize.Y;
+                    s_CachedPanelPositionItemSize.X = m_ShieldHudPanel.Width;
+                    s_CachedPanelPositionItemSize.Y = m_ShieldHudPanel.Height;
                     if (m_PanelPositionItem != null)
                         m_PanelPositionItem.Size = PanelPositionItemSize;
                 }
@@ -148,7 +148,11 @@ namespace PocketShieldCore
                MyAPIGateway.Input.IsNewGameControlPressed(Sandbox.Game.MyControlsSpace.PAUSE_GAME))
             {
                 UpdateHudConfigs();
-                UpdatePanelConfig();
+                if (m_ShieldHudPanel != null)
+                {
+                    m_ShieldHudPanel.Visible = m_IsHudVisible;
+                    m_ShieldHudPanel.UpdatePanelVisibility();
+                }
             }
 
             if (m_ShieldHudPanel != null)
@@ -181,7 +185,12 @@ namespace PocketShieldCore
                 if (_obj.ToString().EndsWith("ScreenOptionsSpace")) // closing options menu just assumes you changed something so it'll re-check config settings
                 {
                     UpdateHudConfigs();
-                    UpdatePanelConfig();
+                    if (m_ShieldHudPanel != null)
+                    {
+                        m_ShieldHudPanel.Visible = m_IsHudVisible;
+                        m_ShieldHudPanel.BackgroundOpacity = m_HudBGOpacity;
+                        m_ShieldHudPanel.UpdatePanelVisibility();
+                    }
                 }
             }
             catch (Exception _e)
@@ -198,7 +207,9 @@ namespace PocketShieldCore
 
             m_ShieldHudPanel = new ShieldHudPanel(m_ManualShieldData, m_AutoShieldData, m_Config, m_Logger);
             m_ShieldHudPanel.CacheIconLists();
-            UpdatePanelConfig();
+            m_ShieldHudPanel.Visible = m_IsHudVisible;
+            m_ShieldHudPanel.BackgroundOpacity = m_HudBGOpacity;
+            m_ShieldHudPanel.UpdatePanelConfig();
 
             ModSettings_InitMenu();
 
@@ -207,12 +218,12 @@ namespace PocketShieldCore
 
         private void UpdateHitEffectDuration(int _ticks)
         {
-            foreach (var data in m_DrawList)
+            for (int i = m_DrawList.Count - 1; i >= 0; --i)
             {
-                data.Ticks -= _ticks;
+                m_DrawList[i].Ticks -= _ticks;
+                if (m_DrawList[i].Ticks <= 0)
+                    m_DrawList.RemoveAt(i);
             }
-
-            int removed = m_DrawList.RemoveAll((OtherCharacterShieldData _data) => { return _data.Ticks <= 0; });
         }
 
         private void UpdateFakeShieldStat()
@@ -240,16 +251,6 @@ namespace PocketShieldCore
             if (MyAPIGateway.Session.Camera != null)
             {
                 s_ViewportSize = MyAPIGateway.Session.Camera.ViewportSize;
-            }
-        }
-
-        private void UpdatePanelConfig()
-        {
-            if (m_ShieldHudPanel != null)
-            {
-                m_ShieldHudPanel.Visible = m_IsHudVisible;
-                m_ShieldHudPanel.BackgroundOpacity = m_HudBGOpacity;
-                m_ShieldHudPanel.UpdatePanelConfig();
             }
         }
 

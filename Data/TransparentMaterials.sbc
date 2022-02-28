@@ -29,9 +29,21 @@
     <TransparentMaterial>
       <Id>
         <TypeId>TransparentMaterialDefinition</TypeId>
-        <SubtypeId>PocketShield_ShieldIcons</SubtypeId>
+        <SubtypeId>PocketShield_DefaultShieldIcons</SubtypeId>
       </Id>
       <Texture>Textures\Icons\ShieldIcons.dds</Texture>
+      <CanBeAffectedByOtherLights>false</CanBeAffectedByOtherLights>
+      <SoftParticleDistanceScale>0</SoftParticleDistanceScale>
+      <AlphaMistingEnable>false</AlphaMistingEnable>
+      <AlphaSaturation>1</AlphaSaturation>
+    </TransparentMaterial>
+
+    <TransparentMaterial>
+      <Id>
+        <TypeId>TransparentMaterialDefinition</TypeId>
+        <SubtypeId>PocketShield_OverchargeIcon</SubtypeId>
+      </Id>
+      <Texture>Textures\Icons\OverchargeIcon.dds</Texture>
       <CanBeAffectedByOtherLights>false</CanBeAffectedByOtherLights>
       <SoftParticleDistanceScale>0</SoftParticleDistanceScale>
       <AlphaMistingEnable>false</AlphaMistingEnable>

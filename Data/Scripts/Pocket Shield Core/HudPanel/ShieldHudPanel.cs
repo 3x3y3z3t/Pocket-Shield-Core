@@ -12,20 +12,18 @@ using StatIconDrawInfo = PocketShieldCore.PocketShieldAPIV2.StatIconDrawInfo;
 
 namespace PocketShieldCore
 {
-    public class ShieldHudPanel
+    public partial class ShieldHudPanel
     {
-        public const int ColumnCount = 2; /* Numbers of items on one row, a.k.a Column Count. */
-        private const float c_TextScale = 15.0f;
-        private const float c_ShieldIconWidth = 24.0f;
-        private const float c_ShieldBarWidth = 150.0f;
-        private const float c_ShieldLabelWidth = 60.0f;
-        private const float c_Margin = 5.0f;
+        public const float TEXT_SCALE = 15.0f;
+        public const float MARGIN = 5.0f;
+        public const float HEIGHT_MIN = ShieldPanel.PANEL_HEIGHT_MAX;
+        public const float MANUAL_PANEL_HEIGHT_NEG = 10.0f;
 
-        public const float PanelMaxWidth = (15.0f * 2.0f + c_ShieldIconWidth + c_ShieldBarWidth + c_ShieldLabelWidth);
-        public const float PanelMaxWidthHalf = PanelMaxWidth * 0.5f;
+        public const int COLUMN_COUNT = 2; /* Numbers of items on one row, a.k.a Column Count. */
+        
 
         public static readonly Color PlateColor = new Color(41, 54, 62);
-        public static readonly Color BGColor = new Color(80, 92, 103);
+        public static readonly Color BGColor = Utils.CalculateBGColor(new Color(80, 92, 103), 0.5f); // new Color(80, 92, 103);
         public static readonly Color BGColorDark = Color.FromNonPremultiplied(80, 92, 103, 127);
         public static readonly Color FGColorPositive = new Color(162, 232, 252);
         public static readonly Color FGColorNegative = new Color(186, 8, 2, 223);
@@ -33,42 +31,38 @@ namespace PocketShieldCore
         public static List<List<object>> ShieldIconPropertiesList { get; private set; }
         public static List<List<object>> ItemCardIconPropertiesList { get; private set; }
 
-        public bool RequireUpdate { get; set; } = true;
-        public bool Visible { get; set; }
+        public bool RequireConfigUpdate { get; set; } = true;
 
-        public Vector2D Origin { get; private set; } = Vector2D.Zero;
-
-        public Vector2 PanelSize { get { return m_PanelSize; } }
-        public float PanelExtraHeight { get { return m_PanelExtraHeight; } }
-
-
+        public bool Visible { get; set; } = false;
         public float BackgroundOpacity { get; set; }
+        public Vector2D Position { get { return m_Position; } }
+        public float Width { get { return m_Width; } }
+        public float Height { get { if (m_Height > ShieldPanel.PANEL_HEIGHT_MAX) return m_Height; return ShieldPanel.PANEL_HEIGHT_MAX; } }
 
         
-        private Vector2 m_PanelSize = new Vector2();
-        private float m_PanelBaseHeight = 0.0f;
-        private float m_PanelExtraHeight = 0.0f;
+        private bool HasAnyShield { get { return m_ManualDataRef.HasShield || m_AutoDataRef.HasShield; } }
+
+        private Vector2D m_Position = Vector2D.Zero;
+        private float m_Width = ShieldPanel.PANEL_WIDTH_MAX;
+        private float m_Height = ShieldPanel.PANEL_HEIGHT_MAX;
+
+        private float m_CachedStatPanelHeight = 0.0f;
         private int m_RowCount = 0;
         private int m_LastItemCount = 0;
 
         private MyShieldData m_ManualDataRef = null;
         private MyShieldData m_AutoDataRef = null;
-        private ClientConfig m_Config = null;
-        private Logger m_Logger = null;
+        private readonly ClientConfig m_Config = null;
+        private readonly Logger m_Logger = null;
+
+        private static Dictionary<MyStringHash, ShieldIconDrawInfo> m_ShieldIconListInternal = null;
+        private static Dictionary<MyStringHash, StatIconDrawInfo> m_StatIconListInternal = null;
+
+        private ShieldPanel m_ManualShieldPanel = null;
+        private ShieldPanel m_AutoShieldPanel = null;
+        private Dictionary<MyStringHash, StatPanel> m_StatPanels = null;
         
-        private Dictionary<MyStringHash, ShieldIconDrawInfo> m_ShieldIconListInternal = new Dictionary<MyStringHash, ShieldIconDrawInfo>(MyStringHash.Comparer);
-        private Dictionary<MyStringHash, StatIconDrawInfo> m_StatIconListInternal = new Dictionary<MyStringHash, StatIconDrawInfo>(MyStringHash.Comparer);
-
-        #region Text HUD API
-        private StringBuilder m_ShieldLabelSB = null;
-
         private HudAPIv2.BillBoardHUDMessage m_BackgroundMidPlate = null;
-        private HudAPIv2.BillBoardHUDMessage m_ShieldIcon = null;
-        private HudAPIv2.BillBoardHUDMessage m_ShieldBarBack = null;
-        private HudAPIv2.BillBoardHUDMessage m_ShieldBarFore = null;
-        private HudAPIv2.HUDMessage m_ShieldLabel = null;
-        private Dictionary<MyStringHash, ItemCard> m_ItemCards = new Dictionary<MyStringHash, ItemCard>(MyStringHash.Comparer);
-        #endregion
 
         #region Debug
         public static bool Debug { get; set; }
@@ -82,6 +76,8 @@ namespace PocketShieldCore
             Debug = false;
             ShieldIconPropertiesList = new List<List<object>>();
             ItemCardIconPropertiesList = new List<List<object>>();
+            m_ShieldIconListInternal = new Dictionary<MyStringHash, ShieldIconDrawInfo>(MyStringHash.Comparer);
+            m_StatIconListInternal = new Dictionary<MyStringHash, StatIconDrawInfo>(MyStringHash.Comparer);
         }
 
         public ShieldHudPanel(MyShieldData _manualShieldData, MyShieldData _autoShieldData, ClientConfig _config, Logger _logger)
@@ -91,8 +87,6 @@ namespace PocketShieldCore
             m_Config = _config;
             m_Logger = _logger;
 
-            m_ShieldLabelSB = new StringBuilder("0");
-
             #region Text HUD API Initialization
             m_BackgroundMidPlate = new HudAPIv2.BillBoardHUDMessage()
             {
@@ -100,55 +94,17 @@ namespace PocketShieldCore
                 Blend = BlendTypeEnum.PostPP,
                 Options = HudAPIv2.Options.Pixel
             };
-            m_ShieldIcon = new HudAPIv2.BillBoardHUDMessage()
-            {
-                Material = MyStringId.GetOrCompute("PocketShield_ShieldIcons"),
-                BillBoardColor = FGColorPositive,
-                uvEnabled = true,
-                uvSize = new Vector2(Constants.ICON_ATLAS_UV_SIZE_X, Constants.ICON_ATLAS_UV_SIZE_Y),
-                uvOffset = new Vector2((Constants.ICON_SHIELD_0 % Constants.ICON_ATLAS_W) * Constants.ICON_ATLAS_UV_SIZE_X,
-                                       (Constants.ICON_SHIELD_0 / Constants.ICON_ATLAS_W) * Constants.ICON_ATLAS_UV_SIZE_Y),
-                Blend = BlendTypeEnum.PostPP,
-                Options = HudAPIv2.Options.Pixel
-            };
-            m_ShieldBarBack = new HudAPIv2.BillBoardHUDMessage()
-            {
-                Material = MyStringId.GetOrCompute("PocketShield_ShieldBar"),
-                BillBoardColor = BGColor,
-                Blend = BlendTypeEnum.PostPP,
-                Options = HudAPIv2.Options.Pixel
-            };
-            m_ShieldBarFore = new HudAPIv2.BillBoardHUDMessage()
-            {
-                Material = MyStringId.GetOrCompute("PocketShield_ShieldBar"),
-                uvEnabled = true,
-                BillBoardColor = FGColorPositive,
-                Blend = BlendTypeEnum.PostPP,
-                Options = HudAPIv2.Options.Pixel
-            };
-            m_ShieldLabel = new HudAPIv2.HUDMessage
-            {
-                Message = m_ShieldLabelSB,
-                ShadowColor = Color.Black,
-                Blend = BlendTypeEnum.PostPP,
-                Options = HudAPIv2.Options.Pixel
-            };
-
-            //foreach (var info in ItemCardIconList)
-            //{
-            //    ItemCard item = new ItemCard(m_Config, m_Logger)
-            //    {
-            //        Visible = false,
-            //        Material = info.Value.Material,
-            //        UvEnabled = info.Value.UvEnabled,
-            //        UvSize = info.Value.UvSize,
-            //        UvOffset = info.Value.UvOffset
-            //    };
-            //    item.UpdateItemCard();
-
-            //    m_ItemCards[info.Key] = item;
-            //}
+            
             #endregion
+
+
+            
+            m_ManualShieldPanel = new ShieldPanel(m_ManualDataRef, m_Config, m_Logger);
+            m_AutoShieldPanel = new ShieldPanel(m_AutoDataRef, m_Config, m_Logger);
+            m_StatPanels = new Dictionary<MyStringHash, StatPanel>(MyStringHash.Comparer);
+
+
+
 
             #region Debug
             m_DebugLabelSB = new StringBuilder("DEBUG");
@@ -166,140 +122,140 @@ namespace PocketShieldCore
 
         }
 
+        public static void Close()
+        {
+            ShieldIconPropertiesList = null;
+            ItemCardIconPropertiesList = null;
+            m_ShieldIconListInternal = null;
+            m_StatIconListInternal = null;
+        }
+
         public void UpdatePanel()
         {
-            if (!RequireUpdate)
-                return;
+            m_ManualShieldPanel.Update();
+            m_AutoShieldPanel.Update();
 
-            Visible = HasAnyShield();
-
-            m_BackgroundMidPlate.Visible = Visible && m_Config.ShowPanel && m_Config.ShowPanelBackground;
-
-            m_ShieldIcon.Visible = Visible && m_Config.ShowPanel;
-            if (m_AutoDataRef.HasShield && m_ShieldIconListInternal.ContainsKey(m_AutoDataRef.SubtypeId))
+            foreach (var panel in m_StatPanels.Values)
             {
-                ShieldIconDrawInfo shieldIconInfo = m_ShieldIconListInternal[m_AutoDataRef.SubtypeId];
-                m_ShieldIcon.Material = shieldIconInfo.Material;
-                m_ShieldIcon.uvEnabled = shieldIconInfo.UvEnabled;
-                m_ShieldIcon.uvSize = shieldIconInfo.UvSize;
-                m_ShieldIcon.uvOffset = shieldIconInfo.UvOffset;
-            }
-
-            float percent = m_AutoDataRef.Energy / m_AutoDataRef.MaxEnergy;
-            m_ShieldBarFore.Visible = Visible && m_Config.ShowPanel;
-            m_ShieldBarFore.uvSize = new Vector2(percent, 1.0f);
-            m_ShieldBarFore.Width = percent * c_ShieldBarWidth * m_Config.ItemScale;
-
-            m_ShieldBarBack.Visible = Visible && m_Config.ShowPanel;
-
-            m_ShieldLabel.Visible = Visible && m_Config.ShowPanel;
-
-            foreach (ItemCard item in m_ItemCards.Values)
-            {
-                if (item.Visible && !Visible)
-                {
-                    item.Visible = false;
-                    item.UpdateItemCard();
-                }
-                else
-                    item.Visible = false;
+                panel.HasStat = false;
             }
 
             int itemCount = 0;
             foreach (var pair in m_AutoDataRef.DefResList)
             {
-                if (!m_ItemCards.ContainsKey(pair.Key))
+                if (!m_StatPanels.ContainsKey(pair.Key))
                     continue;
-                
-                m_ItemCards[pair.Key].Visible = Visible && m_Config.ShowPanel;
-                m_ItemCards[pair.Key].Slot = itemCount;
-                m_ItemCards[pair.Key].Def = pair.Value.Def;
-                m_ItemCards[pair.Key].Res = pair.Value.Res;
-                m_ItemCards[pair.Key].UpdateItemCard();
+
+                StatPanel panel = m_StatPanels[pair.Key];
+                panel.Slot = itemCount;
+                panel.Def = pair.Value.Def;
+                panel.Res = pair.Value.Res;
+                panel.HasStat = true;
+                panel.Update();
+                panel.UpdateVisibility();
                 ++itemCount;
             }
 
             if (m_LastItemCount != itemCount)
             {
                 m_LastItemCount = itemCount;
-                m_RowCount = MathHelper.CeilToInt(itemCount / ColumnCount);
-                UpdatePanelPosition();
+                m_RowCount = MathHelper.CeilToInt(itemCount / COLUMN_COUNT);
+                RequireConfigUpdate = true;
             }
 
-            m_ShieldLabelSB.Clear();
-            m_ShieldLabelSB.Append((int)m_AutoDataRef.Energy);
-            //m_ShieldLabelSB.Append("99.9k");
-
-            RequireUpdate = false;
+            if (RequireConfigUpdate)
+                UpdatePanelConfig();
         }
 
         public void UpdatePanelConfig()
         {
-            m_PanelBaseHeight = (15.0f * 2.0f + c_ShieldIconWidth) * m_Config.ItemScale;
+            m_CachedStatPanelHeight = (m_RowCount * StatPanel.PANEL_HEIGHT_MAX + (m_RowCount - 1) * MARGIN);
+            m_Height = 0.0f;
+            m_Width = ShieldPanel.PANEL_WIDTH_MAX * m_Config.ItemScale;
 
-            m_PanelSize.X = PanelMaxWidth * m_Config.ItemScale;
-            
-            m_BackgroundMidPlate.Visible = Visible && m_Config.ShowPanel && m_Config.ShowPanelBackground;
-            m_BackgroundMidPlate.Width = m_PanelSize.X;
+            if (m_ManualDataRef.HasShield)
+                m_Height += ShieldPanel.PANEL_HEIGHT_MAX - MANUAL_PANEL_HEIGHT_NEG;
+
+            if (m_AutoDataRef.HasShield)
+                m_Height += ShieldPanel.PANEL_HEIGHT_MAX;
+
+            if (m_AutoDataRef.DefResList.Count > 0)
+            {
+                m_Height += MARGIN;
+                m_Height += m_CachedStatPanelHeight;
+            }
+
+            m_Height += MARGIN;
+
+            m_Height *= m_Config.ItemScale;
+            m_CachedStatPanelHeight *= m_Config.ItemScale;
+
+            m_BackgroundMidPlate.Width = m_Width;
+            m_BackgroundMidPlate.Height = m_Height;
             m_BackgroundMidPlate.BillBoardColor = Utils.CalculateBGColor(PlateColor, BackgroundOpacity);
 
-            m_ShieldIcon.Visible = Visible && m_Config.ShowPanel;
-            m_ShieldIcon.Width = c_ShieldIconWidth * m_Config.ItemScale;
-            m_ShieldIcon.Height = c_ShieldIconWidth * m_Config.ItemScale;
-            m_ShieldIcon.Offset = new Vector2D(15.0 * m_Config.ItemScale, 15.0 * m_Config.ItemScale);
-
-            m_ShieldBarBack.Visible = Visible && m_Config.ShowPanel;
-            m_ShieldBarBack.Width = c_ShieldBarWidth * m_Config.ItemScale;
-            m_ShieldBarBack.Height = 11.0f * m_Config.ItemScale;
-            m_ShieldBarBack.Offset = new Vector2D(55.0 * m_Config.ItemScale, 24.0 * m_Config.ItemScale);
-
-            float percent = m_AutoDataRef.Energy / m_AutoDataRef.MaxEnergy;
-            m_ShieldBarFore.Visible = m_ShieldBarBack.Visible;
-            m_ShieldBarFore.Width = percent * c_ShieldBarWidth * m_Config.ItemScale;
-            m_ShieldBarFore.Height = m_ShieldBarBack.Height;
-            m_ShieldBarFore.Offset = m_ShieldBarBack.Offset;
-
-            m_ShieldLabel.Visible = Visible && m_Config.ShowPanel;
-            m_ShieldLabel.Offset = new Vector2D(210.0 * m_Config.ItemScale, 23.0 * m_Config.ItemScale);
-            m_ShieldLabel.Scale = c_TextScale * m_Config.ItemScale;
-
-            foreach (var key in m_AutoDataRef.DefResList.Keys)
+            foreach (var panel in m_StatPanels.Values)
             {
-                if (m_ItemCards.ContainsKey(key))
-                {
-                    m_ItemCards[key].Visible = Visible && m_Config.ShowPanel;
-                }
+                panel.UpdateConfig();
             }
-
+            m_ManualShieldPanel.UpdateConfig();
+            m_AutoShieldPanel.UpdateConfig();
+            
             UpdatePanelPosition();
-            
-            RequireUpdate = true;
+            UpdatePanelVisibility();
+
+            RequireConfigUpdate = false;
         }
 
-        private void UpdatePanelPosition()
+        public void UpdatePanelPosition()
         {
-            m_PanelExtraHeight = (m_RowCount * ItemCard.c_Height + ((m_RowCount > 0) ? 5.0f : 0.0f)) * m_Config.ItemScale;
-            m_PanelSize.Y = m_PanelBaseHeight + m_PanelExtraHeight;
+            m_Position.X = m_Config.PanelPosition.X;
+            m_Position.Y = m_Config.PanelPosition.Y - m_Height;
 
-            Origin = new Vector2D(m_Config.PanelPosition.X, m_Config.PanelPosition.Y + m_PanelBaseHeight - m_PanelSize.Y);
-            
-            m_BackgroundMidPlate.Origin = Origin;
-            m_BackgroundMidPlate.Height = m_PanelSize.Y;
-            m_ShieldIcon.Origin = Origin;
-            m_ShieldBarBack.Origin = Origin;
-            m_ShieldBarFore.Origin = Origin;
-            m_ShieldLabel.Origin = Origin;
+            m_BackgroundMidPlate.Origin = m_Position;
 
-            foreach (var key in m_AutoDataRef.DefResList.Keys)
+            double nextItemY = m_Position.Y;
+            if (m_ManualDataRef.HasShield)
+                m_ManualShieldPanel.UpdatePosition(new Vector2D(m_Position.X, nextItemY));
+
+            if (m_ManualDataRef.HasShield && m_AutoDataRef.HasShield)
+                nextItemY += (ShieldPanel.PANEL_HEIGHT_MAX - MANUAL_PANEL_HEIGHT_NEG) * m_Config.ItemScale;
+
+            if (m_AutoDataRef.HasShield)
+                m_AutoShieldPanel.UpdatePosition(new Vector2D(m_Position.X, nextItemY));
+
+            if (m_AutoDataRef.DefResList.Count > 0)
             {
-                if (m_ItemCards.ContainsKey(key))
+                nextItemY += (ShieldPanel.PANEL_HEIGHT_MAX + MARGIN) * m_Config.ItemScale;
+                foreach (var panel in m_StatPanels.Values)
                 {
-                    m_ItemCards[key].Origin = new Vector2D(Origin.X, Origin.Y + m_PanelBaseHeight);
-                    m_ItemCards[key].UpdateItemCard();
+                    int x = panel.Slot % COLUMN_COUNT;
+                    int y = panel.Slot / COLUMN_COUNT;
+                    panel.UpdatePosition(new Vector2D(
+                        m_Position.X + x * StatPanel.PANEL_WIDTH_MAX * m_Config.ItemScale,
+                        nextItemY + y * (StatPanel.PANEL_HEIGHT_MAX + MARGIN) * m_Config.ItemScale));
                 }
             }
         }
 
+        public void UpdatePanelVisibility()
+        {
+            m_BackgroundMidPlate.Visible = Visible && HasAnyShield && m_Config.ShowPanel && m_Config.ShowPanelBackground;
+
+            if (m_ManualShieldPanel != null)
+                m_ManualShieldPanel.UpdateVisibility(Visible);
+            if (m_AutoShieldPanel != null)
+                m_AutoShieldPanel.UpdateVisibility(Visible);
+
+            foreach (StatPanel panel in m_StatPanels.Values)
+            {
+                panel.Visible = Visible;
+                panel.UpdateVisibility();
+            }
+            
+        }
+
+        #region Debug
         private string[] indicators = new string[]
         {
             ">----",
@@ -336,7 +292,7 @@ namespace PocketShieldCore
                     + c_ColorValue + m_AutoDataRef.DefResList[key].Def + c_ColorLabel + " Def, "
                     + c_ColorValue + m_AutoDataRef.DefResList[key].Res + c_ColorLabel + " Res";
             }
-            DebugLine("ItemCardCount", m_ItemCards.Count);
+            DebugLine("ItemCardCount", m_StatPanels.Count);
 
 
         }
@@ -351,15 +307,9 @@ namespace PocketShieldCore
             s += c_ColorLabel + _label + ": " + c_ColorValue + _value + "\n";
             m_DebugLabelSB.Append(s);
         }
+        #endregion
 
-
-
-
-        private bool HasAnyShield()
-        {
-            return m_ManualDataRef.HasShield || m_AutoDataRef.HasShield;
-        }
-
+        
         private float GetDef(MyStringHash _damageType)
         {
             if (m_AutoDataRef.DefResList.ContainsKey(_damageType))
@@ -397,16 +347,14 @@ namespace PocketShieldCore
                     {
                         m_StatIconListInternal[info.DamageType] = info;
 
-                        ItemCard itemcard = new ItemCard(m_Config, m_Logger)
+                        m_StatPanels[info.DamageType] = new StatPanel(m_Config, m_Logger)
                         {
-                            Visible = false,
                             Material = info.Material,
                             UvEnabled = info.UvEnabled,
                             UvSize = info.UvSize,
                             UvOffset = info.UvOffset
                         };
-                        itemcard.UpdateItemCard();
-                        m_ItemCards[info.DamageType] = itemcard;
+                        m_StatPanels[info.DamageType].UpdateConfig();
                     }
                 }
             }
@@ -422,130 +370,5 @@ namespace PocketShieldCore
         }
 
 
-
-
-
-
-
-
-
-
-#if false
-
-
-
-
-        public float Percent { set { m_OverchargeIcon.Percent = value; UpdatePanelConfig(); } }
-        
-
-        //private Vector2D SubstatPanelPos { get { return ConfigManager.ClientConfig.PanelPosition + new Vector2D(0.0, 55.0); } }
-        private static Vector2D SubstatPanelOffset { get { return new Vector2D(0.0, 55.0 * m_Config.ItemScale); } }
-
-        public static Vector2 PanelSize
-        {
-            get
-            {
-                float bgWidth = Constants.PANEL_WIDTH * m_Config.ItemScale;
-                //float bgHeight = config.Padding * 2.0f + config.DisplayItemsCount * ItemCard.ItemCardHeight + config.Margin * 2.0f * (config.DisplayItemsCount - 1);
-                float bgHeight = (float)SubstatPanelOffset.Y + ItemCard.Height + Constants.MARGIN * config.ItemScale;
-                //if (config.ShowMaxRangeIcon)
-                //    bgHeight += config.Padding;
-
-                //float cursorPosY = config.Padding;
-                //if (config.ShowMaxRangeIcon)
-                //{
-                //    bgHeight += RadarRangeIconHeight + config.Padding;
-                //    cursorPosY += RadarRangeIconHeight + config.Padding;
-                //}
-
-                return new Vector2(bgWidth, bgHeight);
-            }
-        }
-
-
-
-
-
-
-        private CirclePB m_OverchargeIcon = null;
-        
-
-        private int m_IconTextureSlot = Constants.TEXTURE_BLANK;
-
-
-
-        private HudAPIv2.BillBoardTriHUDMessage m_Part = null;
-        private HudAPIv2.BillBoardHUDMessage m_ComparePart = null;
-
-        internal static List<MyStringHash> s_RegisteredDamageType = new List<MyStringHash>();
-
-        static ShieldHudPanel()
-        {
-            LastSlot = 0;
-
-        }
-
-        public ShieldHudPanel()
-        {
-            ClientConfig config = ConfigManager.ClientConfig;
-
-            Visible = false;
-
-            m_ItemCards = new List<ItemCard>(2);
-
-
-            AddItemCard(new ItemCard());
-            AddItemCard(new ItemCard());
-
-
-
-
-
-
-
-
-            m_Part = new HudAPIv2.BillBoardTriHUDMessage()
-            {
-                Material = MyStringId.GetOrCompute("Atlas_E_01"),
-                Visible = false,
-                Origin = new Vector2D(0.0, 0.0),
-
-                P0 = new Vector2(0.0f, 0.0f),
-                P1 = new Vector2(0.0f, 1.0f),
-                P2 = new Vector2(1.0f, 1.0f),
-
-                Width = 256,
-                Height = 256,
-                BillBoardColor = Color.White,
-
-                Blend = BlendTypeEnum.PostPP,
-                Options = HudAPIv2.Options.Pixel
-            };
-            m_ComparePart = new HudAPIv2.BillBoardHUDMessage()
-            {
-                Material = MyStringId.GetOrCompute("Atlas_E_01"),
-                Visible = false,
-
-                Origin = new Vector2D(288.0, 0.0),
-                Width = 256,
-                Height = 256,
-                BillBoardColor = Color.White,
-
-                Blend = BlendTypeEnum.PostPP,
-                Options = HudAPIv2.Options.Pixel
-            };
-
-
-
-            m_OverchargeIcon = new CirclePB()
-            {
-                //Position = new Vector2D(0.0, 0.0)
-            };
-            //m_OverchargeIcon.Percent = 1.0f;
-#endif
-
-
-
-        
     }
 }

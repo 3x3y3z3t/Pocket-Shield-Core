@@ -20,11 +20,11 @@ namespace PocketShieldCore
             if (msg != null)
             {
                 m_Logger.WriteLine("msg = " + msg, 0);
-                if (msg.StartsWith(PocketShieldAPI.STR_REGISTER_MOD))
+                if (msg.StartsWith(PocketShieldAPIV2.STR_REGISTER_MOD))
                 {
                     int pos = msg.IndexOf('=');
-                    string reqVer = msg.Substring(PocketShieldAPI.STR_REGISTER_MOD.Length, pos - PocketShieldAPI.STR_REGISTER_MOD.Length);
-                    string modinfo = msg.Substring(PocketShieldAPI.STR_REGISTER_MOD.Length + PocketShieldAPI.STR_API_VERSION.Length + 1);
+                    string reqVer = msg.Substring(PocketShieldAPIV2.STR_REGISTER_MOD.Length, pos - PocketShieldAPIV2.STR_REGISTER_MOD.Length);
+                    string modinfo = msg.Substring(PocketShieldAPIV2.STR_REGISTER_MOD.Length + PocketShieldAPIV2.STR_API_VERSION.Length + 1);
                     m_ApiBackend_RegisteredMod.Add(modinfo);
 
                     ApiBackend_HandleRequestV2();
@@ -32,9 +32,9 @@ namespace PocketShieldCore
                     m_Logger.WriteLine("Registering mod " + modinfo + " (" + reqVer + ")..", 0);
 
                 }
-                else if (msg.StartsWith(PocketShieldAPI.STR_UNREGISTER_MOD))
+                else if (msg.StartsWith(PocketShieldAPIV2.STR_UNREGISTER_MOD))
                 {
-                    string modinfo = msg.Substring(PocketShieldAPI.STR_UNREGISTER_MOD.Length + 1);
+                    string modinfo = msg.Substring(PocketShieldAPIV2.STR_UNREGISTER_MOD.Length + 1);
                     m_Logger.WriteLine("modinfo = " + modinfo);
                     m_ApiBackend_RegisteredMod.Remove(modinfo);
                     m_Logger.WriteLine("UnRegistering mod " + modinfo + "..", 0);
@@ -61,7 +61,7 @@ namespace PocketShieldCore
             };
 
             m_Logger.WriteLine("SendModMessage (one time)");
-            MyAPIGateway.Utilities.SendModMessage(PocketShieldAPI.MOD_ID, data);
+            MyAPIGateway.Utilities.SendModMessage(PocketShieldAPIV2.MOD_ID, data);
         }
 
 

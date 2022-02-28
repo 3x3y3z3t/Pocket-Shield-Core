@@ -551,11 +551,11 @@ namespace PocketShieldCore
 
 
         #region Internal Stuff
-        private const string STR_LOG_PREFIX = "[PocketShieldAPIV2] ";
-        private const string STR_REGISTER_MOD = "RegMod";
-        private const string STR_UNREGISTER_MOD = "UnRegMod";
-        private const string STR_INTERNAL_REGISTER_CALLBACK = "RegEvt";
-        private const string STR_INTERNAL_UNREGISTER_CALLBACK = "UnRegEvt";
+        public const string STR_LOG_PREFIX = "[PocketShieldAPIV2] ";
+        public const string STR_REGISTER_MOD = "RegMod";
+        public const string STR_UNREGISTER_MOD = "UnRegMod";
+        public const string STR_INTERNAL_REGISTER_CALLBACK = "RegEvt";
+        public const string STR_INTERNAL_UNREGISTER_CALLBACK = "UnRegEvt";
 
         private static PocketShieldAPIV2 s_Instance = null;
         private static Action<string> s_LogFunc = null;

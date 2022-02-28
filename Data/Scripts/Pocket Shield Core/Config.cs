@@ -40,7 +40,7 @@ namespace PocketShieldCore
         public const bool SHOW_PANEL_BG = true;
 
         public const float PANEL_POS_X = 20.0f;
-        public const float PANEL_POS_Y = 785.0f;
+        public const float PANEL_POS_Y = 845.0f;
 
         public const float PANEL_BASE_WIDTH = 265.0f;
         public const float PANEL_BASE_HEIGHT = 265.0f;
@@ -65,6 +65,7 @@ namespace PocketShieldCore
         public const int ICON_ATLAS_H = 1;
 
         public const int ICON_BLANK = 0;
+        public const int ICON_OVERCHARGE = 1;
         public const int ICON_SHIELD_0 = 2;
 
         public const float ICON_ATLAS_UV_SIZE_X = 1.0f / ICON_ATLAS_W;

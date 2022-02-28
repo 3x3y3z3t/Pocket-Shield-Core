@@ -31,6 +31,7 @@ namespace PocketShieldCore
     {
         public bool HasShield { get { return SubtypeId != MyStringHash.NullOrEmpty; } }
         public float EnergyRemainingPercent { get { if (MaxEnergy != 0.0f) return Energy / MaxEnergy; return 0.0f; } }
+        public bool IsManual { get; set; } = false;
 
         [ProtoMember(1)] public MyStringHash SubtypeId;
         [ProtoMember(2)] public bool IsActive;

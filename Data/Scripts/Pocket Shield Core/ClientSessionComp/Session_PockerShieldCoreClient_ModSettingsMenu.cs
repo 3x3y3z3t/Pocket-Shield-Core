@@ -102,7 +102,7 @@ namespace PocketShieldCore
                 if (m_IsMoving)
                 {
                     x = s_CachedPanelPositionItemPos.X;
-                    y = s_CachedPanelPositionItemPos.Y - m_ShieldHudPanel.PanelExtraHeight;
+                    y = s_CachedPanelPositionItemPos.Y;
                 }
                 else
                 {
@@ -120,7 +120,7 @@ namespace PocketShieldCore
             {
                 return new Vector2D(
                     +(m_Config.PanelPosition.X - s_ViewportSize.X * 0.5) / (s_ViewportSize.X * 0.5),
-                    -(m_Config.PanelPosition.Y - m_ShieldHudPanel.PanelExtraHeight - s_ViewportSize.Y * 0.5) / (s_ViewportSize.Y * 0.5) - (m_ShieldHudPanel.PanelSize.Y) / (s_ViewportSize.Y * 0.5));
+                    -(m_Config.PanelPosition.Y - s_ViewportSize.Y * 0.5) / (s_ViewportSize.Y * 0.5));
             }
         }
         internal Vector2D PanelPositionItemSize
@@ -170,8 +170,8 @@ namespace PocketShieldCore
             s_CachedPanelPositionItemPos.X = m_Config.PanelPosition.X;
             s_CachedPanelPositionItemPos.Y = m_Config.PanelPosition.Y;
 
-            s_CachedPanelPositionItemSize.X = m_ShieldHudPanel.PanelSize.X;
-            s_CachedPanelPositionItemSize.Y = m_ShieldHudPanel.PanelSize.Y;
+            s_CachedPanelPositionItemSize.X = m_ShieldHudPanel.Width;
+            s_CachedPanelPositionItemSize.Y = m_ShieldHudPanel.Height;
 
             m_RootCategory = new MenuRootCategory(RootItemString, MenuRootCategory.MenuFlag.PlayerMenu, Constants.LOG_PREFIX + " Settings");
             m_ConfigVersionItem = new MenuItem(ConfigVersionString, m_RootCategory, Interactable: false);
@@ -273,7 +273,7 @@ namespace PocketShieldCore
         internal void ShowPanelOnClick()
         {
             m_Config.ShowPanel = !m_Config.ShowPanel;
-            UpdatePanelConfig();
+            m_ShieldHudPanel.UpdatePanelVisibility();
 
             m_ShowPanelItem.Text = ShowPanelString;
             //ModSettings_RefreshMenuInteractability();
@@ -282,16 +282,17 @@ namespace PocketShieldCore
         internal void ShowPanelBGOnClick()
         {
             m_Config.ShowPanelBackground = !m_Config.ShowPanelBackground;
-            UpdatePanelConfig();
+            m_ShieldHudPanel.UpdatePanelVisibility();
             m_ShowPanelBGItem.Text = ShowPanelBGString;
         }
 
         private void PanelPositionOnSubmit(Vector2D _vector)
         {
-            s_CachedPanelPositionItemPos.Y -= m_ShieldHudPanel.PanelExtraHeight;
+            //s_CachedPanelPositionItemPos.Y -= m_ShieldHudPanel.Height;
             m_Config.PanelPosition = s_CachedPanelPositionItemPos;
-            s_CachedPanelPositionItemPos.Y += m_ShieldHudPanel.PanelExtraHeight;
-            UpdatePanelConfig();
+            //s_CachedPanelPositionItemPos.Y += m_ShieldHudPanel.Height;
+
+            m_ShieldHudPanel?.UpdatePanelPosition();
 
             m_IsMoving = false;
 
@@ -311,14 +312,15 @@ namespace PocketShieldCore
         internal void ScaleOnSubmit(float _value)
         {
             m_Config.ItemScale = MathHelper.Lerp(0.5f, 1.5f, _value);
-            UpdatePanelConfig();
+            m_ShieldHudPanel.RequireConfigUpdate = true;
+            m_ShieldHudPanel.UpdatePanelConfig();
 
             m_ScaleItem.Text = ScaleString;
             m_ScaleItem.InitialPercent = ScaleInitialPercent;
             s_CachedScale = m_Config.ItemScale;
 
             s_CachedPanelPositionItemPos.X = m_Config.PanelPosition.X;
-            s_CachedPanelPositionItemPos.Y = m_Config.PanelPosition.Y + m_ShieldHudPanel.PanelExtraHeight;
+            s_CachedPanelPositionItemPos.Y = m_Config.PanelPosition.Y;
             m_PanelPositionItem.Origin = PanelPositionItemPos;
         }
 
@@ -327,7 +329,8 @@ namespace PocketShieldCore
             m_Config.ItemScale = MathHelper.Lerp(0.5f, 1.5f, _value);
             string s = string.Format("Scale: {0:0}{1:F1}", c_ColorTagNumber, m_Config.ItemScale);
             //s += c_ReadOnlyValueColorTag + " Raw value: " + MathHelper.Lerp(0.5f, 1.5f, _value));
-            UpdatePanelConfig(); // HACK!!;
+            m_ShieldHudPanel.RequireConfigUpdate = true;
+            m_ShieldHudPanel.UpdatePanelConfig(); // HACK!!;
 
             return s;
         }
@@ -335,7 +338,8 @@ namespace PocketShieldCore
         internal void ScaleOnCancel()
         {
             m_Config.ItemScale = s_CachedScale;
-            UpdatePanelConfig();
+            m_ShieldHudPanel.RequireConfigUpdate = true;
+            m_ShieldHudPanel.UpdatePanelConfig();
 
             //MyAPIGateway.Utilities.ShowNotification("Scale = " + ConfigManager.ClientConfig.ItemScale, 3000);
         }
@@ -371,7 +375,8 @@ namespace PocketShieldCore
             if (m_Config.LoadConfigFile())
             {
                 MyAPIGateway.Utilities.ShowNotification("[" + Constants.LOG_PREFIX + "] Config reloaded", 2000);
-                UpdatePanelConfig();
+                m_ShieldHudPanel.RequireConfigUpdate = true;
+                m_ShieldHudPanel.UpdatePanelConfig();
                 ModSettings_RefreshMenu();
             }
             else

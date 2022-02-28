@@ -1,8 +1,8 @@
 ﻿// ;
 using ExShared;
 using Sandbox.Game;
-using System;
 using System.Collections.Generic;
+using VRage.Game;
 using VRage.Game.ModAPI;
 using VRage.Utils;
 
@@ -19,6 +19,8 @@ namespace PocketShieldCore
 
     public class ShieldEmitter
     {
+        public const float PLUGIN_POWER_MOD = 1.1f;
+
         public float ShieldEnergyPercent { get { return Energy / MaxEnergy; } }
         public float OverchargeRemainingPercent { get { return m_OverchargeRemainingTicks / (OverchargeDuration * 60.0f); } }
 
@@ -173,6 +175,7 @@ namespace PocketShieldCore
 
             if (!m_IsTurnedOn)
             {
+                m_OverchargeRemainingTicks = 0;
                 m_Logger.WriteLine("Shield is turned off (skip " + _ticks + " ticks) (internal ticks: " + m_Ticks + ")", 5);
                 return;
             }
@@ -255,9 +258,10 @@ namespace PocketShieldCore
             // revert everything to base value;
             InitBaseValue();
 
+            float powerCost = 1.0f;
             foreach (MyStringHash pluginId in m_Plugins.Keys)
             {
-                if (pluginId == MyStringHash.GetOrCompute(Constants.SUBTYPEID_PLUGIN_CAP))
+                if (pluginId.String.Contains("Cap"))
                 {
                     float mod = Utils.MyPow(1.0f + s_PluginBonusModifiers[pluginId], m_Plugins[pluginId]);
                     MaxEnergy = m_BaseMaxEnergy * mod;
@@ -281,7 +285,11 @@ namespace PocketShieldCore
                         bypass *= OverchargeResBonus;
                     m_Res[MyStringHash.GetOrCompute(damageTypeString)] = 1.0f - bypass;
                 }
+
+                powerCost *= Utils.MyPow(PLUGIN_POWER_MOD, m_Plugins[pluginId]);
             }
+
+            PowerConsumption = m_BasePowerConsumption * powerCost;
 
             // construct DefList, ResList;
             ConstructDefResList();
@@ -314,6 +322,11 @@ namespace PocketShieldCore
             {
                 m_Logger.WriteLine("  There is no Character to take damage (this should not happen)", 1);
                 return false;
+            }
+
+            if (_damageInfo.Type == MyDamageType.Fall)
+            {
+
             }
 
             m_ChargeDelayRemainingTicks = (int)(ChargeDelay * 60.0f); // 60 ticks per second;
@@ -408,6 +421,7 @@ namespace PocketShieldCore
         public void AddPlugins(ref List<MyStringHash> _newPlugins)
         {
             m_Plugins.Clear();
+            PluginsCount = 0;
             
             for (int i = 0; i < _newPlugins.Count && i < m_BaseMaxPluginsCount; ++i)
             {

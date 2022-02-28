@@ -3,7 +3,6 @@ using Draygo.API;
 using ExShared;
 using System;
 using System.Collections.Generic;
-using System.Text;
 using VRage.Utils;
 using VRageMath;
 
@@ -11,88 +10,97 @@ using BlendTypeEnum = VRageRender.MyBillboard.BlendTypeEnum;
 
 namespace PocketShieldCore
 {
-    class CirclePB
+    class ProgressCircle
     {
-        private const float c_IconSize = 32.0f;
+        public const float ICON_SIZE = 48.0f;
 
-        public bool Visible { get; set; }
-        public Vector2D Position { get; set; } /* Position is Top-Left. */
-        public Color Color { get; set; }
+        public float Percent { get; set; } = 0.0f;
 
-        public float Percent { get; set; } /* The percentage of this Progressbar, from 0 - 1. */
+        public bool Visible { get; set; } = false;
+        //public Vector2D Position { get; private set; } = Vector2D.Zero; /* Position is Top-Left. */
+        
+        private readonly List<HudAPIv2.BillBoardTriHUDMessage> m_TriParts = null;
+        private readonly HudAPIv2.BillBoardHUDMessage m_OriginPoint = null;
 
+        private readonly ClientConfig m_Config = null;
+        private readonly Logger m_Logger = null;
 
-        private static Vector2 s_UvOffset = new Vector2(0.0f, 0.25f);
-        private static Vector2 s_UvSize = new Vector2(0.25f, 0.25f);
-        private List<HudAPIv2.BillBoardTriHUDMessage> m_TriParts;
-
-        private static List<Vector2> s_FixedPoints;
-
-        static CirclePB()
+        /* Point list:
+         *  4   0   1
+         * 
+         *  _       _
+         * 
+         *  3   _   2
+         */
+        private static List<Vector2> s_FixedPoints = new List<Vector2>(5)
         {
-            /* Point list:
-             *  4   0   1
-             *  
-             *  _   _   _
-             * 
-             *  3   _   2
-             */
+            new Vector2(0.5f, 0.0f), // 0;
+            new Vector2(1.0f, 0.0f), // 1;
+            new Vector2(1.0f, 1.0f), // 2;
+            new Vector2(0.0f, 1.0f), // 3;
+            new Vector2(0.0f, 0.0f), // 4;
+        };
+        
+        private static Vector2 s_UvSize = new Vector2(Constants.ICON_ATLAS_UV_SIZE_X, Constants.ICON_ATLAS_UV_SIZE_Y);
+        private static Vector2 s_UvOffset = new Vector2((Constants.ICON_OVERCHARGE % Constants.ICON_ATLAS_W) * Constants.ICON_ATLAS_UV_SIZE_X,
+                                                        (Constants.ICON_OVERCHARGE / Constants.ICON_ATLAS_W) * Constants.ICON_ATLAS_UV_SIZE_Y);
 
-            s_FixedPoints = new List<Vector2>(5);
-            s_FixedPoints.Add(new Vector2(0.5f, 0.0f)); // 0;
-            s_FixedPoints.Add(new Vector2(1.0f, 0.0f)); // 1;
-            s_FixedPoints.Add(new Vector2(1.0f, 1.0f)); // 2;
-            s_FixedPoints.Add(new Vector2(0.0f, 1.0f)); // 3;
-            s_FixedPoints.Add(new Vector2(0.0f, 0.0f)); // 4;
-        }
-
-        public CirclePB()
+        public ProgressCircle(ClientConfig _config, Logger _logger)
         {
+            m_Config = _config;
+            m_Logger = _logger;
 
             m_TriParts = new List<HudAPIv2.BillBoardTriHUDMessage>(5);
-
+            
+            
             for (int i = 0; i < 5; ++i)
             {
                 m_TriParts.Add(new HudAPIv2.BillBoardTriHUDMessage()
                 {
-                    //Material = MyStringId.GetOrCompute("PocketShield_ShieldIcons"),
-                    Material = MyStringId.GetOrCompute("PocketShield_BG"),
-                    Width = c_IconSize,
-                    Height = c_IconSize,
-                    BillBoardColor = new Color(187, 233, 246),
-                    P0 = new Vector2(0.5f, 0.5f),// * s_UvSize + s_UvOffset,
+                    Material = MyStringId.GetOrCompute("PocketShield_OverchargeIcon"),
+                    //Material = MyStringId.GetOrCompute("PocketShield_BG"),
+                    BillBoardColor = ShieldHudPanel.FGColorPositive,
+                    P0 = new Vector2(0.5f, 0.5f),
                     Blend = BlendTypeEnum.PostPP,
                     Options = HudAPIv2.Options.Pixel,
                 });
             }
-
-
-            UpdateItemCardConfig();
-            /* 
-            BG: 80 92 103
-            FG: 187 233 246
-            AnimatedSegment: 212 251 254 0.7
-            */
-
-        }
-
-        ~CirclePB()
-        {
-            m_TriParts.Clear();
-        }
-
-        public void UpdateItemCard()
-        {
-            if (!Visible || Percent == 0.0f)
+            
+            m_OriginPoint = new HudAPIv2.BillBoardHUDMessage()
             {
-                for (int i = 0; i < 5; ++i)
-                    m_TriParts[i].Visible = false;
+                Visible = false,
+                Material = MyStringId.GetOrCompute("Square"),
+                Width = 4.0f,
+                Height = 4.0f,
+                BillBoardColor = ShieldHudPanel.FGColorPositive,
+                Blend = BlendTypeEnum.PostPP,
+                Options = HudAPIv2.Options.Pixel,
+            };
 
+        }
+
+        public void Close()
+        {
+            s_FixedPoints = null;
+        }
+            
+        public void Update()
+        {
+            if (!Visible || Percent <= 0.0f)
+            {
+                m_TriParts[0].Visible = false;
+                m_TriParts[1].Visible = false;
+                m_TriParts[2].Visible = false;
+                m_TriParts[3].Visible = false;
+                m_TriParts[4].Visible = false;
                 return;
             }
 
+            if (Percent > 1.0f)
+                Percent = 1.0f;
+
             #region Do Not Open! You have been warned.
-            else if (Percent <= 0.125f)
+            if (Percent <= 0.125f)
             {
                 m_TriParts[0].Visible = Visible;
                 m_TriParts[1].Visible = false;
@@ -189,35 +197,32 @@ namespace PocketShieldCore
                 m_TriParts[4].P2 = new Vector2(0.5f - x, 0.0f);
             }
             #endregion
-
-            foreach (var triPart in m_TriParts)
-            {
-                //triPart.P1 = triPart.P1 * s_UvSize + s_UvOffset;
-                //triPart.P2 = triPart.P2 * s_UvSize + s_UvOffset;
-            }
-
-
-            //ClientLogger.Log("TriParts Pos = " + Position.ToString());
-
-
+            
+            
         }
 
-        public void UpdateItemCardConfig()
+        public void UpdateConfig()
         {
             foreach (var part in m_TriParts)
             {
-                part.Origin = Position;
-                part.Scale = 1.0f;
+                part.Width = ICON_SIZE * m_Config.ItemScale;
+                part.Height = ICON_SIZE * m_Config.ItemScale;
+                part.Offset = new Vector2D(-ICON_SIZE * m_Config.ItemScale, -ICON_SIZE * m_Config.ItemScale);
             }
-
-
+        
 
             //ClientLogger.Log("TriParts Pos = " + Position.ToString());
-
-
-            UpdateItemCard();
+            
         }
 
+
+        public void UpdatePosition(Vector2D _position)
+        {
+            foreach (var part in m_TriParts)
+            {
+                part.Origin = _position;
+            }
+        }
 
     }
 }

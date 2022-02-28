@@ -10,6 +10,8 @@ using VRage.Utils;
 using System;
 using VRage.Game.Entity;
 using Sandbox.Game.Entities;
+using VRage.Game;
+using VRage.ObjectBuilders;
 
 namespace PocketShieldCore
 {
@@ -82,7 +84,7 @@ namespace PocketShieldCore
                 MyAPIGateway.Entities.OnEntityRemove += Entities_OnEntityRemove;
 
                 MyAPIGateway.Utilities.MessageEntered += ChatCommand_MessageEnteredHandle;
-                MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
+                MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPIV2.MOD_ID, ApiBackend_ModMessageHandle);
                 MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(Constants.SYNC_ID_TO_SERVER, Sync_ReceiveDataFromClient);
 
                 MyAPIGateway.Projectiles.AddOnHitInterceptor(50, Projectiles_OnHitInterceptor);
@@ -118,10 +120,12 @@ namespace PocketShieldCore
                 MyAPIGateway.Entities.OnEntityAdd -= Entities_OnEntityAdd;
                 MyAPIGateway.Entities.OnEntityRemove -= Entities_OnEntityRemove;
 
-                MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPI.MOD_ID, ApiBackend_ModMessageHandle);
+                MyAPIGateway.Utilities.UnregisterMessageHandler(PocketShieldAPIV2.MOD_ID, ApiBackend_ModMessageHandle);
                 MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(Constants.SYNC_ID_TO_SERVER, Sync_ReceiveDataFromClient);
 
                 MyAPIGateway.Projectiles.RemoveOnHitInterceptor(Projectiles_OnHitInterceptor);
+                
+                MyAPIGateway.Players.ItemConsumed -= Players_ItemConsumed;
 
                 m_Logger.WriteLine("Shutdown Done");
             }
@@ -141,6 +145,7 @@ namespace PocketShieldCore
 
             m_SaveData = new SaveDataManager(m_ShieldManager_CharacterShieldManagers, m_Logger);
 
+            MyAPIGateway.Players.ItemConsumed += Players_ItemConsumed;
             MyAPIGateway.Session.DamageSystem.RegisterBeforeDamageHandler(50, BeforeDamageHandler);
             
             m_Logger.WriteLine("Setup Done");
@@ -257,7 +262,6 @@ namespace PocketShieldCore
 
             ShieldManager_DropEmitter(_character, true);
             ShieldManager_DropEmitter(_character, false);
-            m_SaveData.ForceRemoveEntry(_character.EntityId);
 
             ulong playerUid = GetPlayerSteamUid(_character);
             if (playerUid == 0U)
@@ -290,12 +294,63 @@ namespace PocketShieldCore
             }
         }
 
+
+        private void Players_ItemConsumed(IMyCharacter _character, MyDefinitionId _itemDefId)
+        {
+            m_Logger.WriteLine("> Event triggered: " + _itemDefId.SubtypeId.String + " (name: " + _itemDefId.SubtypeName + ")", 5);
+            IMyInventory inventory = _character.GetInventory();
+            if (inventory == null)
+                return; // this should not happens;
+
+            PocketShieldAPIV2.ShieldEmitterProperties prop = null;
+            foreach (var emitterData in m_ShieldManager_EmitterConstructionData.Values)
+            {
+                prop = new PocketShieldAPIV2.ShieldEmitterProperties(emitterData);
+                if (!prop.IsManual && _itemDefId.SubtypeId == prop.SubtypeId)
+                {
+                    m_Logger.WriteLine("  Match found: " + _itemDefId.SubtypeId, 4);
+
+                    if (!m_ShieldManager_CharacterShieldManagers.ContainsKey(_character.EntityId))
+                        return;
+
+                    CharacterShieldManager manager = m_ShieldManager_CharacterShieldManagers[_character.EntityId];
+                    float energy = manager.LastAutoEnergy;
+                    bool onoff = !manager.LastAutoTurnedOn;
+
+                    int itemInd = manager.AutoEmitterIndex;
+                    m_Logger.WriteLine("  Toggled Index = " + itemInd, 4);
+                    
+                    // HACK: force update savedata;
+                    m_SaveData.SetSaveAutoShieldEnergy(_character.EntityId, energy);
+                    m_SaveData.SetSaveAutoShieldTurnedOn(_character.EntityId, onoff);
+                    
+
+                    inventory.AddItems(1, (MyObjectBuilder_PhysicalObject)MyObjectBuilderSerializer.CreateNewObject(_itemDefId), itemInd);
+                    m_Logger.WriteLine("  Item added back at index " + itemInd, 4);
+
+                    manager.AutoEmitter.Energy = energy;
+                    manager.AutoEmitter.IsTurnedOn = onoff;
+
+                    // TODO: turn on-off shield;
+                    //m_Logger.WriteLine("  Last energy = " + m_ShieldManager_CharacterShieldManagers[_character.EntityId].LastAutoEnergy, 5);
+                    //m_Logger.WriteLine("  Current energy = " + m_ShieldManager_CharacterShieldManagers[_character.EntityId].AutoEmitter?.Energy, 5);
+
+
+
+
+                }
+            }
+
+
+
+        }
+
         private MyProjectileInfo? pjInfo = null;
 
         private void Projectiles_OnHitInterceptor(ref MyProjectileInfo _projectile, ref MyProjectileHitInfo _hitInfo)
         {
-            return;
 
+#if false
             m_Logger.WriteLine("Projectile captured");
             m_Logger.WriteLine("  _projectile.Origin = " + _projectile.Origin);
             m_Logger.WriteLine("  _projectile.Position = " + _projectile.Position);
@@ -329,6 +384,7 @@ namespace PocketShieldCore
                 new MyEntity[] { PSProjectileDetector.DummyEntity },
                 false,
                 _projectile.OwningPlayer);
+#endif
 
             // TODO: implement this;
         }
@@ -347,6 +403,14 @@ namespace PocketShieldCore
 
             if (_damageInfo.IsDeformation)
                 return;
+
+            if (_damageInfo.Type != MyDamageType.Bullet &&
+                _damageInfo.Type != MyDamageType.Explosion &&
+                _damageInfo.Type != MyDamageType.Wolf &&
+                _damageInfo.Type != MyDamageType.Spider)
+            {
+                m_Logger.WriteLine("Damage type: " + _damageInfo.Type.String);
+            }
 
             if (GetPlayerSteamUid(character) == 0U)
             {

@@ -48,8 +48,7 @@ namespace PocketShieldCore
 
                 m_Logger.WriteLine("  Shield Data updated", 4);
 
-                if (m_ShieldHudPanel != null)
-                    m_ShieldHudPanel.RequireUpdate = true;
+                m_ShieldHudPanel?.UpdatePanel();
             }
             catch (Exception _e)
             {
@@ -59,6 +58,9 @@ namespace PocketShieldCore
 
         private void Sync_CopyManualShieldData(MyShieldData _data)
         {
+            if (_data.HasShield != m_ManualShieldData.HasShield && m_ShieldHudPanel != null)
+                m_ShieldHudPanel.RequireConfigUpdate = true;
+
             if (_data.HasShield)
             {
                 m_ManualShieldData.SubtypeId = _data.SubtypeId;
@@ -82,6 +84,9 @@ namespace PocketShieldCore
 
         private void Sync_CopyAutoShieldData(MyShieldData _data)
         {
+            if (_data.HasShield != m_ManualShieldData.HasShield && m_ShieldHudPanel != null)
+                m_ShieldHudPanel.RequireConfigUpdate = true;
+
             if (_data.HasShield)
             {
                 m_AutoShieldData.SubtypeId = _data.SubtypeId;
