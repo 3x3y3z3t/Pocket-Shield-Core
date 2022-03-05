@@ -10,11 +10,15 @@ namespace PocketShieldCore
 {
     public partial class Session_PocketShieldCoreServer
     {
+        /// <summary> [Debug] </summary>
+        private ulong m_Sync_SyncCalled = 0UL;
+        private ulong m_Sync_SyncPerformed = 0UL;
+
         private void Sync_SyncDataToPlayers()
         {
             foreach (IMyPlayer player in m_CachedPlayers)
             {
-                ++m_SyncSaved;
+                ++m_Sync_SyncCalled;
 
                 if (m_ForceSyncPlayers.Contains(player.SteamUserId))
                 {
@@ -23,8 +27,8 @@ namespace PocketShieldCore
                     Sync_SendSyncDataToPlayer(player);
                 }
                 else if (player.Character != null &&
-                         m_ShieldManager_CharacterShieldManagers.ContainsKey(player.Character.EntityId) && 
-                         m_ShieldManager_CharacterShieldManagers[player.Character.EntityId].RequireSync)
+                         //m_ShieldManager.CharacterInfos.ContainsKey(player.Character.EntityId) && 
+                         m_ShieldManager.CharacterInfos[player.Character.EntityId].RequireSync)
                 {
                     m_Logger.WriteLine("Request Sync due to: Shield Updated <" + player.SteamUserId + ">", 3);
                     Sync_SendSyncDataToPlayer(player);
@@ -70,12 +74,12 @@ namespace PocketShieldCore
             packet.MyManualShieldData = new MyShieldData() { SubtypeId = MyStringHash.NullOrEmpty };
             packet.MyAutoShieldData = new MyShieldData() { SubtypeId = MyStringHash.NullOrEmpty };
 
-            if (m_ShieldManager_CharacterShieldManagers.ContainsKey(_player.Character.EntityId))
+            if (m_ShieldManager.CharacterInfos.ContainsKey(_player.Character.EntityId))
             {
                 ShieldEmitter emitter = null;
 
                 // manual emitter;
-                emitter = m_ShieldManager_CharacterShieldManagers[_player.Character.EntityId].ManualEmitter;
+                emitter = m_ShieldManager.CharacterInfos[_player.Character.EntityId].ManualEmitter;
                 if (emitter != null)
                 {
                     packet.MyManualShieldData = new MyShieldData
@@ -92,7 +96,7 @@ namespace PocketShieldCore
                 }
 
                 // auto emitter;
-                emitter = m_ShieldManager_CharacterShieldManagers[_player.Character.EntityId].AutoEmitter;
+                emitter = m_ShieldManager.CharacterInfos[_player.Character.EntityId].AutoEmitter;
                 if (emitter != null)
                 {
                     packet.MyAutoShieldData = new MyShieldData
@@ -112,7 +116,7 @@ namespace PocketShieldCore
             m_Logger.WriteLine("Sending sync data to player " + _player.SteamUserId, 5);
             MyAPIGateway.Multiplayer.SendMessageTo(Constants.SYNC_ID_TO_CLIENT, data, _player.SteamUserId);
 
-            --m_SyncSaved;
+            ++m_Sync_SyncPerformed;
             m_ShieldDamageEffects.Clear();
         }
 
@@ -152,17 +156,17 @@ namespace PocketShieldCore
                     return;
                 }
 
-                if (!m_ShieldManager_CharacterShieldManagers.ContainsKey(player.Character.EntityId))
+                if (!m_ShieldManager.CharacterInfos.ContainsKey(player.Character.EntityId))
                 {
-                    m_Logger.WriteLine("  Player <" + _senderPlayerId + "> character does not have any Shield Emitter (this should not happen)", 4);
+                    m_Logger.WriteLine("  Player <" + _senderPlayerId + "> character entity is not added yet (this should not happen)", 4);
                     return;
                 }
 
-                CharacterShieldManager shieldManager = m_ShieldManager_CharacterShieldManagers[player.Character.EntityId];
-                if (shieldManager.ManualEmitter != null)
-                    shieldManager.ManualEmitter.IsTurnedOn = !shieldManager.ManualEmitter.IsTurnedOn;
-                if (shieldManager.AutoEmitter != null)
-                    shieldManager.AutoEmitter.IsTurnedOn = !shieldManager.AutoEmitter.IsTurnedOn;
+                CharacterShieldInfo charInfo = m_ShieldManager.CharacterInfos[player.Character.EntityId];
+                if (charInfo.ManualEmitter != null)
+                    charInfo.ManualEmitter.IsTurnedOn = !charInfo.ManualEmitter.IsTurnedOn;
+                if (charInfo.AutoEmitter != null)
+                    charInfo.AutoEmitter.IsTurnedOn = !charInfo.AutoEmitter.IsTurnedOn;
 
                 m_Logger.WriteLine("  Player <" + _senderPlayerId + "> toggled their shield(s)", 4);
             }

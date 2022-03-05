@@ -28,9 +28,7 @@ namespace PocketShieldCore
         private Logger m_Logger = null;
         private ServerConfig m_Config = null;
         private SaveDataManager m_SaveData = null;
-
-        /// <summary> [Debug] </summary>
-        private ulong m_SyncSaved = 0;
+        private ShieldManager m_ShieldManager = null;
 
         private List<IMyPlayer> m_CachedPlayers = new List<IMyPlayer>();
         private Dictionary<ulong, Vector3D> m_CachedPlayersPosition = new Dictionary<ulong, Vector3D>();
@@ -58,39 +56,38 @@ namespace PocketShieldCore
             if (!IsServer)
                 return;
 
-                m_ApiBackend_RegisteredMod = new List<string>();
-                m_ApiBackend_ExposedMethods = new List<Delegate>()
-                {
-                    (Action<long, bool>)ShieldManager_ActivateManualShield,
-                    (Action<long, bool, bool>)ShieldManager_TurnShieldOnOff
-                };
+            m_Config = new ServerConfig("server_config.ini", m_Logger);
 
-                m_ShieldManager_CharacterShieldManagers = new Dictionary<long, CharacterShieldManager>();
-                m_ShieldManager_EmitterConstructionData = new Dictionary<MyStringHash, List<object>>(MyStringHash.Comparer);
-                m_ShieldManager_ShieldLoggers = new Dictionary<long, VRage.MyTuple<Logger, Logger>>();
+            m_Logger.LogLevel = m_Config.LogLevel;
+
+            m_Logger.WriteLine("Setting up..");
+
+            ShieldManager.PluginModifiers = new Dictionary<MyStringHash, Dictionary<MyStringHash, float>>(MyStringHash.Comparer);
+            m_ShieldManager = new ShieldManager(m_Logger);
+
+            m_ApiBackend_RegisteredMod = new List<string>();
+            m_ApiBackend_ExposedMethods = new List<Delegate>()
+            {
+                (Action<long, bool>)m_ShieldManager.ActivateManualShield,
+                (Action<long, bool, bool>)m_ShieldManager.TurnShieldOnOff,
+                (Func<List<object>, bool>)m_ShieldManager.RegisterEmitter
+            };
+
+
+            m_Inventory_Plugins = new List<MyStringHash>(12); // By design, a Manual Emitter supports 4 and an Auto Emitter supports 8 Plugins;
+
+
+            MyAPIGateway.Entities.OnEntityAdd += Entities_OnEntityAdd;
+            MyAPIGateway.Entities.OnEntityRemove += Entities_OnEntityRemove;
+
+            MyAPIGateway.Utilities.MessageEntered += ChatCommand_MessageEnteredHandle;
+            MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPIV2.MOD_ID, ApiBackend_ModMessageHandle);
+            MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(Constants.SYNC_ID_TO_SERVER, Sync_ReceiveDataFromClient);
+
+            MyAPIGateway.Projectiles.AddOnHitInterceptor(50, Projectiles_OnHitInterceptor);
 
 
 
-
-                m_CachedProps = new PocketShieldAPIV2.ShieldEmitterProperties(null);
-
-                m_Config = new ServerConfig("server_config.ini", m_Logger);
-
-                m_Logger.LogLevel = m_Config.LogLevel;
-
-                m_Logger.WriteLine("Setting up..");
-
-                MyAPIGateway.Entities.OnEntityAdd += Entities_OnEntityAdd;
-                MyAPIGateway.Entities.OnEntityRemove += Entities_OnEntityRemove;
-
-                MyAPIGateway.Utilities.MessageEntered += ChatCommand_MessageEnteredHandle;
-                MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPIV2.MOD_ID, ApiBackend_ModMessageHandle);
-                MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(Constants.SYNC_ID_TO_SERVER, Sync_ReceiveDataFromClient);
-
-                MyAPIGateway.Projectiles.AddOnHitInterceptor(50, Projectiles_OnHitInterceptor);
-                
-
-            
 
         }
 
@@ -104,18 +101,15 @@ namespace PocketShieldCore
                     m_Logger.WriteLine("  > Warning < Mod " + mod + " has not called DeInit() yet");
 
                 m_SaveData.UnloadData();
+                
+                ulong syncSaved = m_Sync_SyncCalled - m_Sync_SyncPerformed;
+                ulong pluginOpSaved = ShieldEmitter.PluginChangedCalled - ShieldEmitter.PluginChangedPerformed;
+                m_Logger.WriteLine(string.Format(">> {0:0}/{1:0} sync operations saved ({2:0.##}%), {3:0}/{4:0} plugin processing operation saved ({5:0.##}%) <<",
+                    syncSaved, m_Sync_SyncCalled, syncSaved * 100.0f / m_Sync_SyncCalled,
+                    pluginOpSaved, ShieldEmitter.PluginChangedCalled, pluginOpSaved * 100.0f / ShieldEmitter.PluginChangedCalled));
 
-                m_Logger.WriteLine("  > " + m_SyncSaved + " < sync operations saved");
-
-                foreach (var loggers in m_ShieldManager_ShieldLoggers.Values)
-                {
-                    if (loggers.Item1 != null)
-                        loggers.Item1.Close();
-                    if (loggers.Item2 != null)
-                        loggers.Item2.Close();
-                }
-                m_ShieldManager_ShieldLoggers.Clear();
-
+                m_ShieldManager.Close();
+               
                 MyAPIGateway.Utilities.MessageEntered -= ChatCommand_MessageEnteredHandle;
                 MyAPIGateway.Entities.OnEntityAdd -= Entities_OnEntityAdd;
                 MyAPIGateway.Entities.OnEntityRemove -= Entities_OnEntityRemove;
@@ -130,7 +124,7 @@ namespace PocketShieldCore
                 m_Logger.WriteLine("Shutdown Done");
             }
 
-            ShieldEmitter.s_PluginBonusModifiers = null;
+            ShieldManager.PluginModifiers = null;
 
             //MyAPIGateway.Entities.RemoveEntity(PSProjectileDetector.DummyEntity);
             PSProjectileDetector.DummyEntity = null;
@@ -143,7 +137,7 @@ namespace PocketShieldCore
             if (!IsServer)
                 return;
 
-            m_SaveData = new SaveDataManager(m_ShieldManager_CharacterShieldManagers, m_Logger);
+            m_SaveData = new SaveDataManager(m_ShieldManager.CharacterInfos, m_Logger);
 
             MyAPIGateway.Players.ItemConsumed += Players_ItemConsumed;
             MyAPIGateway.Session.DamageSystem.RegisterBeforeDamageHandler(50, BeforeDamageHandler);
@@ -187,16 +181,20 @@ namespace PocketShieldCore
 
             if (m_Ticks % m_Config.ShieldUpdateInterval == 0)
             {
-                foreach (CharacterShieldManager character in m_ShieldManager_CharacterShieldManagers.Values)
+                foreach (CharacterShieldInfo charInfo in m_ShieldManager.CharacterInfos.Values)
                 {
-                    character.Update(m_Config.ShieldUpdateInterval);
+                    charInfo.Update(m_Config.ShieldUpdateInterval);
                 }
             }
 
             if (m_Ticks % 60000 == 0)
             {
                 Blueprints_UpdateBlueprintData();
-                m_Logger.WriteLine("> " + m_SyncSaved + " < sync operations saved");
+                ulong syncSaved = m_Sync_SyncCalled - m_Sync_SyncPerformed;
+                ulong pluginOpSaved = ShieldEmitter.PluginChangedCalled - ShieldEmitter.PluginChangedPerformed;
+                m_Logger.WriteLine(string.Format(">> {0:0}/{1:0} sync operations saved ({2:0.##}%), {3:0}/{4:0} plugin processing operation saved ({5:0.##}%) <<",
+                    syncSaved, m_Sync_SyncCalled, syncSaved * 100.0f / m_Sync_SyncCalled,
+                    pluginOpSaved, ShieldEmitter.PluginChangedCalled, pluginOpSaved * 100.0f / ShieldEmitter.PluginChangedCalled));
             }
 
 
@@ -232,7 +230,10 @@ namespace PocketShieldCore
             }
 
             m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "]: Hooking inventory.ContentChanged..", 5);
-            inventory.ContentsChanged += Inventory_ContentsChangedHandle;
+            inventory.ContentsChanged += Inventory_ContentsChanged;
+            inventory.BeforeContentsChanged += Inventory_BeforeContentsChanged;
+
+            m_ShieldManager.CharacterInfos[character.EntityId] = new CharacterShieldInfo();
         }
 
         private void Entities_OnEntityRemove(VRage.ModAPI.IMyEntity _entity)
@@ -251,8 +252,9 @@ namespace PocketShieldCore
                 return;
 
             m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "]: UnHooking inventory.ContentChanged..", 5);
-            inventory.ContentsChanged -= Inventory_ContentsChangedHandle;
+            inventory.ContentsChanged -= Inventory_ContentsChanged;
 
+            m_ShieldManager.CharacterInfos.Remove(character.EntityId);
         }
 
         private void Character_CharacterDied(IMyCharacter _character)
@@ -260,8 +262,8 @@ namespace PocketShieldCore
             if (_character == null)
                 return;
 
-            ShieldManager_DropEmitter(_character, true);
-            ShieldManager_DropEmitter(_character, false);
+            m_ShieldManager.DropEmitter(_character, true);
+            m_ShieldManager.DropEmitter(_character, false);
 
             ulong playerUid = GetPlayerSteamUid(_character);
             if (playerUid == 0U)
@@ -302,47 +304,33 @@ namespace PocketShieldCore
             if (inventory == null)
                 return; // this should not happens;
 
-            PocketShieldAPIV2.ShieldEmitterProperties prop = null;
-            foreach (var emitterData in m_ShieldManager_EmitterConstructionData.Values)
+            foreach (PocketShieldAPIV2.ShieldEmitterProperties prop in m_ShieldManager.EmitterProperties.Values)
             {
-                prop = new PocketShieldAPIV2.ShieldEmitterProperties(emitterData);
                 if (!prop.IsManual && _itemDefId.SubtypeId == prop.SubtypeId)
                 {
                     m_Logger.WriteLine("  Match found: " + _itemDefId.SubtypeId, 4);
 
-                    if (!m_ShieldManager_CharacterShieldManagers.ContainsKey(_character.EntityId))
-                        return;
-
-                    CharacterShieldManager manager = m_ShieldManager_CharacterShieldManagers[_character.EntityId];
-                    float energy = manager.LastAutoEnergy;
-                    bool onoff = !manager.LastAutoTurnedOn;
-
-                    int itemInd = manager.AutoEmitterIndex;
+                    CharacterShieldInfo charInfo = m_ShieldManager.CharacterInfos[_character.EntityId];
+                    float energy = charInfo.LastAutoEnergy;
+                    bool onoff = !charInfo.LastAutoTurnedOn;
+                    int itemInd = charInfo.AutoEmitterIndex;
                     m_Logger.WriteLine("  Toggled Index = " + itemInd, 4);
-                    
-                    // HACK: force update savedata;
-                    m_SaveData.SetSaveAutoShieldEnergy(_character.EntityId, energy);
-                    m_SaveData.SetSaveAutoShieldTurnedOn(_character.EntityId, onoff);
-                    
+
+                    //// HACK: force update savedata;
+                    //m_SaveData.SetSaveAutoShieldEnergy(_character.EntityId, energy);
+                    //m_SaveData.SetSaveAutoShieldTurnedOn(_character.EntityId, onoff);
 
                     inventory.AddItems(1, (MyObjectBuilder_PhysicalObject)MyObjectBuilderSerializer.CreateNewObject(_itemDefId), itemInd);
                     m_Logger.WriteLine("  Item added back at index " + itemInd, 4);
 
-                    manager.AutoEmitter.Energy = energy;
-                    manager.AutoEmitter.IsTurnedOn = onoff;
+                    charInfo.AutoEmitter.Energy = energy;
+                    charInfo.AutoEmitter.IsTurnedOn = onoff;
 
-                    // TODO: turn on-off shield;
                     //m_Logger.WriteLine("  Last energy = " + m_ShieldManager_CharacterShieldManagers[_character.EntityId].LastAutoEnergy, 5);
                     //m_Logger.WriteLine("  Current energy = " + m_ShieldManager_CharacterShieldManagers[_character.EntityId].AutoEmitter?.Energy, 5);
-
-
-
-
+                    return;
                 }
             }
-
-
-
         }
 
         private MyProjectileInfo? pjInfo = null;
@@ -423,17 +411,17 @@ namespace PocketShieldCore
                     " - Character [" + Utils.GetCharacterName(character) + "] (EntityId = " + character.EntityId + ") (Player <" + GetPlayerSteamUid(character) + ">)", 4);
             }
 
-            if (!m_ShieldManager_CharacterShieldManagers.ContainsKey(character.EntityId) || 
-                !m_ShieldManager_CharacterShieldManagers[character.EntityId].HasAnyEmitter)
+            if (!m_ShieldManager.CharacterInfos.ContainsKey(character.EntityId) || 
+                !m_ShieldManager.CharacterInfos[character.EntityId].HasAnyEmitter)
                 return;
 
-            CharacterShieldManager manager = m_ShieldManager_CharacterShieldManagers[character.EntityId];
+            CharacterShieldInfo charInfo = m_ShieldManager.CharacterInfos[character.EntityId];
             //float beforeDamageHealth = MyVisualScriptLogicProvider.GetPlayersHealth(character.ControllerInfo.ControllingIdentityId);
 
             // damage will try passing through Manual Shield first;
-            if (manager.ManualEmitter != null)
+            if (charInfo.ManualEmitter != null)
             {
-                if (manager.ManualEmitter.TakeDamage(ref _damageInfo))
+                if (charInfo.ManualEmitter.TakeDamage(ref _damageInfo))
                 {
                     // update effect list;
                 }
@@ -445,10 +433,10 @@ namespace PocketShieldCore
             }
 
             // the rest of damage will pass through Auto Shield;
-            if (manager.AutoEmitter != null)
+            if (charInfo.AutoEmitter != null)
             {
 
-                if (manager.AutoEmitter.TakeDamage(ref _damageInfo))
+                if (charInfo.AutoEmitter.TakeDamage(ref _damageInfo))
                 {
                     // update effect list;
 
@@ -457,7 +445,7 @@ namespace PocketShieldCore
                     if (m_ShieldDamageEffects.ContainsKey(character.EntityId))
                     {
                         m_ShieldDamageEffects[character.EntityId].Ticks = m_Ticks;
-                        m_ShieldDamageEffects[character.EntityId].ShieldAmountPercent = manager.AutoEmitter.ShieldEnergyPercent;
+                        m_ShieldDamageEffects[character.EntityId].ShieldAmountPercent = charInfo.AutoEmitter.ShieldEnergyPercent;
                     }
                     else
                     {
@@ -466,7 +454,7 @@ namespace PocketShieldCore
                             Entity = character,
                             EntityId = character.EntityId,
                             Ticks = m_Ticks,
-                            ShieldAmountPercent = manager.AutoEmitter.ShieldEnergyPercent
+                            ShieldAmountPercent = charInfo.AutoEmitter.ShieldEnergyPercent
                         };
                     }
 

@@ -57,12 +57,12 @@ namespace PocketShieldCore
                     MyAPIGateway.Utilities.ShowNotification("[" + Constants.LOG_PREFIX + "] [Server] Config reloaded", 2000);
                     m_Logger.LogLevel = m_Config.LogLevel;
 
-                    foreach (var loggers in m_ShieldManager_ShieldLoggers.Values)
+                    foreach (var charInfo in m_ShieldManager.CharacterInfos.Values)
                     {
-                        if (loggers.Item1 != null)
-                            loggers.Item1.Suppressed = m_Config.SuppressAllShieldLog;
-                        if (loggers.Item2 != null)
-                            loggers.Item2.Suppressed = m_Config.SuppressAllShieldLog;
+                        if (charInfo.ManualEmitterLogger != null)
+                            charInfo.ManualEmitterLogger.Suppressed = m_Config.SuppressAllShieldLog;
+                        if (charInfo.AutoEmitterLogger != null)
+                            charInfo.AutoEmitterLogger.Suppressed = m_Config.SuppressAllShieldLog;
                     }
                 }
                 else

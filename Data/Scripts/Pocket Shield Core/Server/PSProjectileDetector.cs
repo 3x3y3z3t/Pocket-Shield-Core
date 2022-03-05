@@ -20,7 +20,7 @@ namespace PocketShieldCore
 
         private BoundingSphereD m_Sphere;
 
-        private readonly CharacterShieldManager m_Parent = null;
+        private readonly CharacterShieldInfo m_Parent = null;
 
         static PSProjectileDetector()
         {
@@ -42,12 +42,12 @@ namespace PocketShieldCore
             DummyEntity.RemoveFromGamePruningStructure();
         }
 
-        public PSProjectileDetector(CharacterShieldManager _parent, float _radius)
+        public PSProjectileDetector(CharacterShieldInfo _parent, float _radius)
         {
             m_Parent = _parent;
             
-            m_Sphere = new BoundingSphereD(m_Parent.Position, _radius);
-            DetectorAABB = new BoundingBoxD(m_Parent.Position - new Vector3D(_radius), m_Parent.Position + new Vector3D(_radius));
+            //m_Sphere = new BoundingSphereD(m_Parent.Position, _radius);
+            //DetectorAABB = new BoundingBoxD(m_Parent.Position - new Vector3D(_radius), m_Parent.Position + new Vector3D(_radius));
             
         }
 
@@ -98,7 +98,7 @@ namespace PocketShieldCore
                 return;
             }
 
-            m_Sphere.Center = m_Parent.Position;
+            //m_Sphere.Center = m_Parent.Position;
             MyAPIGateway.Projectiles.RemoveHitDetector(this);
             DetectorAABB = new BoundingBoxD(m_Sphere.Center - new Vector3D(m_Sphere.Radius), m_Sphere.Center + new Vector3D(m_Sphere.Radius));
             MyAPIGateway.Projectiles.AddHitDetector(this);

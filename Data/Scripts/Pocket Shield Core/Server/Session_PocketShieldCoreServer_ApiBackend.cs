@@ -7,8 +7,7 @@ using VRage.Utils;
 
 using ServerData = VRage.MyTuple<
     string,
-    System.Collections.Generic.Dictionary<VRage.Utils.MyStringHash, System.Collections.Generic.List<object>>,
-    System.Collections.Generic.Dictionary<VRage.Utils.MyStringHash, float>,
+    System.Collections.Generic.Dictionary<VRage.Utils.MyStringHash, System.Collections.Generic.Dictionary<VRage.Utils.MyStringHash, float>>,
     System.Collections.Generic.List<System.Delegate>>;
 
 namespace PocketShieldCore
@@ -60,9 +59,8 @@ namespace PocketShieldCore
             ServerData data = new ServerData()
             {
                 Item1 = "Server Version=" + PocketShieldAPIV2.SERVER_BACKEND_VERSION,
-                Item2 = m_ShieldManager_EmitterConstructionData,
-                Item3 = ShieldEmitter.s_PluginBonusModifiers,
-                Item4 = m_ApiBackend_ExposedMethods
+                Item2 = ShieldManager.PluginModifiers,
+                Item3 = m_ApiBackend_ExposedMethods
             };
 
             MyAPIGateway.Utilities.SendModMessage(PocketShieldAPIV2.MOD_ID, data);

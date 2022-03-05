@@ -11,12 +11,12 @@ namespace PocketShieldCore
 {
     public partial class Session_PocketShieldCoreServer
     {
-        private List<MyStringHash> m_Inventory_Plugins = new List<MyStringHash>();
+        private List<MyStringHash> m_Inventory_Plugins = null;
 
         private MyStringHash m_Inventory_ManualEmitterItems = MyStringHash.NullOrEmpty;
         private MyStringHash m_Inventory_AutoEmitterItems = MyStringHash.NullOrEmpty;
         
-        private void Inventory_ContentsChangedHandle(MyInventoryBase _inventory)
+        private void Inventory_BeforeContentsChanged(MyInventoryBase _inventory)
         {
             IMyCharacter character = _inventory.Container.Entity as IMyCharacter;
             if (character == null)
@@ -24,7 +24,43 @@ namespace PocketShieldCore
 
             if (character.IsDead)
             {
-                m_Logger.WriteLine("Character [" + Utils.GetCharacterName(character) + "] is dead");
+                m_Logger.WriteLine("Character [" + Utils.GetCharacterName(character) + "] is dead", 5);
+                return;
+            }
+
+            CharacterShieldInfo charInfo = m_ShieldManager.CharacterInfos[character.EntityId];
+            if (charInfo.AutoEmitter == null)
+            {
+                m_Logger.WriteLine("Character [" + Utils.GetCharacterName(character) + "] doesn't have Auto Emitter", 2);
+                return;
+            }
+
+            m_Logger.WriteLine("Inventory of character [" + Utils.GetCharacterName(character) + "]'s content is about to change", 5);
+            
+            List<MyPhysicalInventoryItem> inventoryItems = _inventory.GetItems();
+            m_Logger.WriteLine("Processing Inventory items..", 5);
+            for (int i = 0; i < inventoryItems.Count; ++i)
+            {
+                MyStringHash subtypeId = inventoryItems[i].Content.SubtypeId;
+                m_Logger.WriteLine("  Processing item " + subtypeId, 4);
+
+                if (charInfo.AutoEmitter.SubtypeId == subtypeId)
+                {
+                    charInfo.AutoEmitterIndex = i;
+                    break;
+                }
+            }
+        }
+
+        private void Inventory_ContentsChanged(MyInventoryBase _inventory)
+        {
+            IMyCharacter character = _inventory.Container.Entity as IMyCharacter;
+            if (character == null)
+                return;
+
+            if (character.IsDead)
+            {
+                m_Logger.WriteLine("Character [" + Utils.GetCharacterName(character) + "] is dead", 5);
                 return;
             }
 
@@ -35,15 +71,16 @@ namespace PocketShieldCore
 
         private void Inventory_RefreshInventory(MyInventoryBase _inventory)
         {
-            m_Logger.WriteLine("Starting RefreshInventory()", 4);
+            m_Logger.WriteLine("===== Starting Inventory_RefreshInventory() =====", 4);
 
             IMyCharacter character = _inventory.Container.Entity as IMyCharacter;
             if (character == null)
                 return;
-
+            
             List<MyPhysicalInventoryItem> inventoryItems = _inventory.GetItems();
-            m_Logger.WriteLine("  [" + Utils.GetCharacterName(character) + "]'s inventory now contains " + inventoryItems.Count + " items.", 4);
+            m_Logger.WriteLine("[" + Utils.GetCharacterName(character) + "]'s inventory now contains " + inventoryItems.Count + " items.", 4);
 
+            m_Logger.WriteLine("Processing Inventory items..", 5);
             int manualInd = -1;
             int autoInd = -1;
             for (int i = 0; i < inventoryItems.Count; ++i)
@@ -54,21 +91,21 @@ namespace PocketShieldCore
 
                 if (!subtypeId.String.Contains("PocketShield_"))
                     continue;
-
-
+                
                 if (subtypeId.String.Contains("Emitter"))
                 {
-                    if (!m_ShieldManager_EmitterConstructionData.ContainsKey(subtypeId))
+                    PocketShieldAPIV2.ShieldEmitterProperties prop = m_ShieldManager.GetEmitterProperties(subtypeId);
+                    if (prop == null)
                         continue;
 
-                    m_CachedProps.ReplaceData(m_ShieldManager_EmitterConstructionData[subtypeId]);
-                    if (m_CachedProps.IsManual)
+                    if (prop.IsManual)
                     {
                         if (m_Inventory_ManualEmitterItems == MyStringHash.NullOrEmpty)
                         {
                             m_Logger.WriteLine("    Accepted Manual Emitter " + subtypeId, 4);
                             m_Inventory_ManualEmitterItems = subtypeId;
                             manualInd = i;
+                            m_Logger.WriteLine("i = " + i);
                         }
                     }
                     else
@@ -78,6 +115,7 @@ namespace PocketShieldCore
                             m_Logger.WriteLine("    Accepted Auto Emitter " + subtypeId, 4);
                             m_Inventory_AutoEmitterItems = subtypeId;
                             autoInd = i;
+                            m_Logger.WriteLine("i = " + i);
                         }
                     }
                 }
@@ -93,37 +131,35 @@ namespace PocketShieldCore
                 }
             }
 
+            m_Logger.WriteLine("Processing Emitter items (if found any)..", 5);
             ProcessManualEmitter(character);
             ProcessAutoEmitter(character);
-            
-            if (m_ShieldManager_CharacterShieldManagers.ContainsKey(character.EntityId))
-            {
-                if (manualInd != -1)
-                    m_ShieldManager_CharacterShieldManagers[character.EntityId].ManualEmitterIndex = manualInd;
-                if (autoInd != -1)
-                    m_ShieldManager_CharacterShieldManagers[character.EntityId].AutoEmitterIndex = autoInd;
-            }
 
-            // cleanup cache;
+            //if (manualInd != -1)
+            //    m_ShieldManager.CharacterInfos[character.EntityId].ManualEmitterIndex = manualInd;
+            //if (autoInd != -1)
+            //    m_ShieldManager.CharacterInfos[character.EntityId].AutoEmitterIndex = autoInd;
+
+            //m_Logger.WriteLine("Auto Index = " + autoInd + ", set = " + m_ShieldManager.CharacterInfos[character.EntityId].AutoEmitterIndex);
+
+            m_Logger.WriteLine("Cleaning up..", 5);
             m_Inventory_Plugins.Clear();
             m_Inventory_ManualEmitterItems = MyStringHash.NullOrEmpty;
             m_Inventory_AutoEmitterItems = MyStringHash.NullOrEmpty;
-            return;
+
+            m_Logger.WriteLine("===== Ending Inventory_RefreshInventory()   =====", 4);
         }
 
         private void ProcessManualEmitter(IMyCharacter _character)
         {
-            ShieldEmitter oldEmitter = null;
+            m_Logger.Write("  Processing Manual Emitter: ", 4);
+
+            ShieldEmitter oldEmitter = m_ShieldManager.CharacterInfos[_character.EntityId].ManualEmitter;
             ShieldEmitter newEmitter = null;
 
-            m_Logger.WriteLine("  Processing Manual Emitter..", 4);
-            if (m_ShieldManager_CharacterShieldManagers.ContainsKey(_character.EntityId))
-                oldEmitter = m_ShieldManager_CharacterShieldManagers[_character.EntityId].ManualEmitter;
-
-            bool replaced = false;
             if (oldEmitter == null)
             {
-                m_Logger.Write("    Old Emitter is null, ", 4);
+                m_Logger.WriteInline("Old Emitter is null, ", 4);
                 if (m_Inventory_ManualEmitterItems == MyStringHash.NullOrEmpty)
                 {
                     m_Logger.WriteInline("no new emitter -> do nothing\n", 4);
@@ -131,54 +167,56 @@ namespace PocketShieldCore
                 else
                 {
                     m_Logger.WriteInline("new emitter detected -> add emitter\n", 4);
-                    newEmitter = ShieldManager_AddNewEmitter(_character, m_Inventory_ManualEmitterItems, true);
+                    newEmitter = m_ShieldManager.AddNewEmitter(_character, m_Inventory_ManualEmitterItems, true);
+                    if (newEmitter != null)
+                        newEmitter.Energy = m_SaveData.GetSavedManualShieldEnergy(_character.EntityId);
                 }
             }
             else
             {
-                m_Logger.Write("    Has old emitter, ", 4);
+                m_Logger.WriteInline("Has old emitter, ", 4);
                 if (m_Inventory_ManualEmitterItems == MyStringHash.NullOrEmpty)
                 {
                     m_Logger.WriteInline("no new emitter -> drop emitter\n", 4);
-                    ShieldManager_DropEmitter(_character, true);
+                    m_ShieldManager.DropEmitter(_character, false);
+
+                    ulong playerUid = GetPlayerSteamUid(_character);
+                    if (!m_ForceSyncPlayers.Contains(playerUid))
+                        m_ForceSyncPlayers.Add(playerUid);
                 }
                 else
                 {
-                    m_Logger.WriteInline("new emitter detected -> replace emitter or do nothing\n", 4);
+                    m_Logger.WriteInline("new emitter detected -> ", 4);
                     if (oldEmitter.SubtypeId == m_Inventory_ManualEmitterItems)
+                    {
+                        m_Logger.WriteInline("do nothing\n", 4);
                         newEmitter = oldEmitter;
+                    }
                     else
                     {
-                        newEmitter = ShieldManager_ReplaceEmitter(_character, m_Inventory_ManualEmitterItems, true);
-                        replaced = true;
+                        m_Logger.WriteInline("replace\n", 4);
+                        newEmitter = m_ShieldManager.ReplaceEmitter(_character, m_Inventory_ManualEmitterItems, true);
                     }
                 }
             }
-
 
             if (newEmitter != null)
             {
                 if (m_Inventory_Plugins.Count > 0)
                     newEmitter.AddPlugins(ref m_Inventory_Plugins);
-
-                if (!replaced && m_SaveData != null)
-                    newEmitter.Energy = m_SaveData.GetSavedManualShieldEnergy(_character.EntityId);
             }
         }
 
         private void ProcessAutoEmitter(IMyCharacter _character)
         {
-            ShieldEmitter oldEmitter = null;
+            m_Logger.Write("  Processing Auto Emitter: ", 4);
+
+            ShieldEmitter oldEmitter = m_ShieldManager.CharacterInfos[_character.EntityId].AutoEmitter;
             ShieldEmitter newEmitter = null;
-
-            m_Logger.WriteLine("  Processing Auto Emitter..", 4);
-            if (m_ShieldManager_CharacterShieldManagers.ContainsKey(_character.EntityId))
-                oldEmitter = m_ShieldManager_CharacterShieldManagers[_character.EntityId].AutoEmitter;
-
-            bool replaced = false;
+            
             if (oldEmitter == null)
             {
-                m_Logger.Write("    Old Emitter is null, ", 4);
+                m_Logger.WriteInline("Old Emitter is null, ", 4);
                 if (m_Inventory_AutoEmitterItems == MyStringHash.NullOrEmpty)
                 {
                     m_Logger.WriteInline("no new emitter -> do nothing\n", 4);
@@ -186,40 +224,46 @@ namespace PocketShieldCore
                 else
                 {
                     m_Logger.WriteInline("new emitter detected -> add emitter\n", 4);
-                    newEmitter = ShieldManager_AddNewEmitter(_character, m_Inventory_AutoEmitterItems, false);
+                    newEmitter = m_ShieldManager.AddNewEmitter(_character, m_Inventory_AutoEmitterItems, false);
+                    if (newEmitter != null)
+                    {
+                        newEmitter.Energy = m_SaveData.GetSavedAutoShieldEnergy(_character.EntityId);
+                        newEmitter.IsTurnedOn = m_SaveData.GetSavedAutoShieldTurnedOn(_character.EntityId);
+                    }
                 }
             }
             else
             {
-                m_Logger.Write("    Has old emitter, ", 4);
+                m_Logger.WriteInline("Has old emitter, ", 4);
                 if (m_Inventory_AutoEmitterItems == MyStringHash.NullOrEmpty)
                 {
                     m_Logger.WriteInline("no new emitter -> drop emitter\n", 4);
-                    ShieldManager_DropEmitter(_character, false);
+                    m_ShieldManager.DropEmitter(_character, false);
+
+                    ulong playerUid = GetPlayerSteamUid(_character);
+                    if (!m_ForceSyncPlayers.Contains(playerUid))
+                        m_ForceSyncPlayers.Add(playerUid);
                 }
                 else
                 {
-                    m_Logger.WriteInline("new emitter detected -> replace emitter or do nothing\n", 4);
+                    m_Logger.WriteInline("new emitter detected -> ", 4);
                     if (oldEmitter.SubtypeId == m_Inventory_AutoEmitterItems)
+                    {
+                        m_Logger.WriteInline("do nothing\n", 4);
                         newEmitter = oldEmitter;
+                    }
                     else
                     {
-                        newEmitter = ShieldManager_ReplaceEmitter(_character, m_Inventory_AutoEmitterItems, false);
-                        replaced = true;
+                        m_Logger.WriteInline("replace\n", 4);
+                        newEmitter = m_ShieldManager.ReplaceEmitter(_character, m_Inventory_AutoEmitterItems, false);
                     }
                 }
             }
-
+            
             if (newEmitter != null)
             {
                 if (m_Inventory_Plugins.Count > 0)
                     newEmitter.AddPlugins(ref m_Inventory_Plugins);
-                
-                if (!replaced && m_SaveData != null)
-                {
-                    newEmitter.Energy = m_SaveData.GetSavedAutoShieldEnergy(_character.EntityId);
-                    newEmitter.IsTurnedOn = m_SaveData.GetSavedAutoShieldTurnedOn(_character.EntityId);
-                }
             }
         }
 

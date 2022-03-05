@@ -11,9 +11,9 @@ namespace PocketShieldCore
 {
     class SaveData
     {
-        public float ManualEnergy;
-        public float AutoEnergy;
-        public bool AutoTurnedOn;
+        public float ManualEnergy = 0.0f;
+        public float AutoEnergy = 0.0f;
+        public bool AutoTurnedOn = true;
     }
 
     public class SaveDataManager
@@ -21,17 +21,17 @@ namespace PocketShieldCore
         private const string c_SavedataFilename = "PocketShield_savedata.dat";
         private const string c_SectionCommon = "Common";
 
-        private Dictionary<long, SaveData> m_EnergyData = null;
+        private Dictionary<long, SaveData> m_SaveData = null;
 
-        private Dictionary<long, CharacterShieldManager> m_EmittersRef = null;
+        private Dictionary<long, CharacterShieldInfo> m_CharacterInfosRef = null;
         private Logger m_Logger = null;
         
         
-        public SaveDataManager(Dictionary<long, CharacterShieldManager> _emitters, Logger _logger)
+        public SaveDataManager(Dictionary<long, CharacterShieldInfo> _charInfos, Logger _logger)
         {
-            m_EnergyData = new Dictionary<long, SaveData>();
+            m_SaveData = new Dictionary<long, SaveData>();
 
-            m_EmittersRef = _emitters;
+            m_CharacterInfosRef = _charInfos;
             m_Logger = _logger;
             LoadData();
         }
@@ -70,7 +70,7 @@ namespace PocketShieldCore
 
             errorCount = TryParseData(iniData);
 
-            m_Logger.WriteLine("  Loaded " + m_EnergyData.Count + " shield data, got " + errorCount + " error(s)", 2);
+            m_Logger.WriteLine("  Loaded " + m_SaveData.Count + " shield data, got " + errorCount + " error(s)", 2);
             m_Logger.WriteLine("Loading SaveData done", 1);
             return true;
         }
@@ -88,7 +88,7 @@ namespace PocketShieldCore
             m_Logger.WriteLine("Saving SaveData (shield)...", 1);
 
             MyIni iniData = new MyIni();
-            foreach (var pair in m_EnergyData)
+            foreach (var pair in m_SaveData)
             {
                 if (pair.Value.ManualEnergy > 0.0f || pair.Value.AutoEnergy > 0.0f)
                 {
@@ -114,104 +114,116 @@ namespace PocketShieldCore
             return true;
         }
 
-        public void ForceRemoveEntry(long _entityId)
+        public void Update()
         {
-            if (m_EnergyData.ContainsKey(_entityId))
-                m_EnergyData.Remove(_entityId);
-        }
-
-        public void RemoveShieldEnergy(long _entityId, bool _isManual)
-        {
-            if (!m_EnergyData.ContainsKey(_entityId))
-                return;
-
-            if (_isManual)
-                m_EnergyData[_entityId].ManualEnergy = 0.0f;
-            else
+            foreach (var pair in m_CharacterInfosRef)
             {
-                m_EnergyData[_entityId].AutoEnergy = 0.0f;
-                m_EnergyData[_entityId].AutoTurnedOn = true;
+                if (!pair.Value.HasAnyEmitter)
+                {
+                    if (m_SaveData.ContainsKey(pair.Key))
+                    {
+                        m_SaveData[pair.Key].ManualEnergy = 0.0f;
+                        m_SaveData[pair.Key].AutoEnergy = 0.0f;
+                        m_SaveData[pair.Key].AutoTurnedOn = true;
+                    }
+
+                    continue;
+                }
+
+                if (!m_SaveData.ContainsKey(pair.Key))
+                    m_SaveData[pair.Key] = new SaveData();
+
+                if (pair.Value.ManualEmitter != null)
+                    m_SaveData[pair.Key].ManualEnergy = pair.Value.ManualEmitter.Energy;
+                else
+                    m_SaveData[pair.Key].ManualEnergy = 0.0f;
+                
+                if (pair.Value.AutoEmitter != null)
+                {
+                    m_SaveData[pair.Key].AutoEnergy = pair.Value.AutoEmitter.Energy;
+                    m_SaveData[pair.Key].AutoTurnedOn = pair.Value.AutoEmitter.IsTurnedOn;
+                }
+                else
+                {
+                    m_SaveData[pair.Key].AutoEnergy = 0.0f;
+                    m_SaveData[pair.Key].AutoTurnedOn = true;
+                }
             }
         }
 
+        public void ApplySavedataOnceBeforeSim()
+        {
+            foreach (var key in m_SaveData.Keys)
+            {
+                if (!m_CharacterInfosRef.ContainsKey(key))
+                    continue;
+
+                if (m_CharacterInfosRef[key].ManualEmitter != null)
+                    m_CharacterInfosRef[key].ManualEmitter.Energy = m_SaveData[key].ManualEnergy;
+
+                if (m_CharacterInfosRef[key].AutoEmitter != null)
+                {
+                    m_CharacterInfosRef[key].AutoEmitter.Energy = m_SaveData[key].AutoEnergy;
+                    m_CharacterInfosRef[key].AutoEmitter.IsTurnedOn = m_SaveData[key].AutoTurnedOn;
+                }
+            }
+        }
+
+        //public void ForceRemoveEntry(long _entityId)
+        //{
+        //    if (m_SaveData.ContainsKey(_entityId))
+        //        m_SaveData.Remove(_entityId);
+        //}
+
+        //public void RemoveShieldEnergy(long _entityId, bool _isManual)
+        //{
+        //    if (!m_SaveData.ContainsKey(_entityId))
+        //        return;
+
+        //    if (_isManual)
+        //        m_SaveData[_entityId].ManualEnergy = 0.0f;
+        //    else
+        //    {
+        //        m_SaveData[_entityId].AutoEnergy = 0.0f;
+        //        m_SaveData[_entityId].AutoTurnedOn = true;
+        //    }
+        //}
+
         public float GetSavedManualShieldEnergy(long _entityId)
         {
-            if (m_EnergyData.ContainsKey(_entityId))
-                return m_EnergyData[_entityId].ManualEnergy;
+            if (m_SaveData.ContainsKey(_entityId))
+                return m_SaveData[_entityId].ManualEnergy;
 
             return 0.0f;
         }
 
         public float GetSavedAutoShieldEnergy(long _entityId)
         {
-            if (m_EnergyData.ContainsKey(_entityId))
-                return m_EnergyData[_entityId].AutoEnergy;
+            if (m_SaveData.ContainsKey(_entityId))
+                return m_SaveData[_entityId].AutoEnergy;
 
             return 0.0f;
         }
 
         public bool GetSavedAutoShieldTurnedOn(long _entityId)
         {
-            if (m_EnergyData.ContainsKey(_entityId))
-                return m_EnergyData[_entityId].AutoTurnedOn;
+            if (m_SaveData.ContainsKey(_entityId))
+                return m_SaveData[_entityId].AutoTurnedOn;
 
             return true;
         }
 
-        public void SetSaveAutoShieldEnergy(long _entityId, float _value)
-        {
-            if (m_EnergyData.ContainsKey(_entityId))
-                m_EnergyData[_entityId].AutoEnergy = _value;
-        } 
+        //public void SetSaveAutoShieldEnergy(long _entityId, float _value)
+        //{
+        //    if (m_SaveData.ContainsKey(_entityId))
+        //        m_SaveData[_entityId].AutoEnergy = _value;
+        //}
 
-        public void SetSaveAutoShieldTurnedOn(long _entityId, bool _turnedOn)
-        {
-            if (m_EnergyData.ContainsKey(_entityId))
-                m_EnergyData[_entityId].AutoTurnedOn = _turnedOn;
-        } 
-
-        public void ApplySavedataOnceBeforeSim()
-        {
-            foreach (var key in m_EnergyData.Keys)
-            {
-                if (m_EmittersRef.ContainsKey(key))
-                {
-                    if (m_EmittersRef[key].ManualEmitter != null)
-                        m_EmittersRef[key].ManualEmitter.Energy = m_EnergyData[key].ManualEnergy;
-
-                    if (m_EmittersRef[key].AutoEmitter != null)
-                    {
-                        m_EmittersRef[key].AutoEmitter.Energy = m_EnergyData[key].AutoEnergy;
-                        m_EmittersRef[key].AutoEmitter.IsTurnedOn = m_EnergyData[key].AutoTurnedOn;
-                    }
-                }
-            }
-        }
-
-        public void Update()
-        {
-            foreach (var pair in m_EmittersRef)
-            {
-                if (!m_EnergyData.ContainsKey(pair.Key))
-                    continue;
-
-                if (pair.Value.ManualEmitter != null)
-                    m_EnergyData[pair.Key].ManualEnergy = pair.Value.ManualEmitter.Energy;
-                else
-                    m_EnergyData[pair.Key].ManualEnergy = 0.0f;
-
-                if (pair.Value.AutoEmitter != null)
-                {
-                    m_EnergyData[pair.Key].AutoEnergy = pair.Value.AutoEmitter.Energy;
-                    m_EnergyData[pair.Key].AutoTurnedOn = pair.Value.AutoEmitter.IsTurnedOn;
-                }
-                else
-                {
-                    m_EnergyData[pair.Key].AutoEnergy = 0.0f;
-                    m_EnergyData[pair.Key].AutoTurnedOn = true;
-                }
-            }
-        }
+        //public void SetSaveAutoShieldTurnedOn(long _entityId, bool _turnedOn)
+        //{
+        //    if (m_SaveData.ContainsKey(_entityId))
+        //        m_SaveData[_entityId].AutoTurnedOn = _turnedOn;
+        //}
 
         private int TryParseData(MyIni _iniData)
         {
@@ -260,16 +272,16 @@ namespace PocketShieldCore
                     continue;
                 }
 
-                m_EnergyData[pid] = new SaveData()
+                m_SaveData[pid] = new SaveData()
                 {
                     ManualEnergy = manualEnergy,
                     AutoEnergy = autoEnergy,
                     AutoTurnedOn = autoTurnedOn
-                };   
+                };
             }
 
             return errCount;
         }
-        
+
     }
 }
