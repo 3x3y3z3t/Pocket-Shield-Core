@@ -122,7 +122,7 @@ namespace PocketShieldCore
                 if (m_OverchargeIcon != null)
                 {
                     m_OverchargeIcon.Visible = Visible;
-                    m_OverchargeIcon.Percent = m_DataRef.EnergyRemainingPercent;
+                    m_OverchargeIcon.Percent = m_DataRef.OverchargeRemainingPercent;
                 }
                 m_OverchargeIcon?.Update();
             }

@@ -28,7 +28,7 @@ namespace PocketShieldCore
         public static ulong PluginChangedPerformed { get; private set; } = 0;
 
         public float ShieldEnergyPercent { get { return Energy / MaxEnergy; } }
-        public float OverchargeRemainingPercent { get { return m_OverchargeRemainingTicks / (OverchargeDuration * 60.0f); } }
+        public float OverchargeRemainingPercent { get { if (OverchargeDuration == 0.0f) return 0.0f; return m_OverchargeRemainingTicks / (OverchargeDuration * 60.0f); } }
 
         public bool IsManual { get; private set; } = false;
         public MyStringHash SubtypeId { get; private set; } = MyStringHash.NullOrEmpty;
@@ -222,6 +222,7 @@ namespace PocketShieldCore
                     else
                     {
                         Energy = MaxEnergy;
+                        logString += " (maxed)";
                         powerCost *= 0.01;
                         //m_Logger.WriteLine("  PowerCost = " + powerCost + " (" + PowerConsumption / 60.0 + "/tick) (" + PowerConsumption + "/s) (upkeep)");
                     }
@@ -343,13 +344,16 @@ namespace PocketShieldCore
                 m_Logger.WriteLine("  There is no Character to take damage (this should not happen)", 1);
                 return false;
             }
-
-            if (_damageInfo.Type == MyDamageType.Fall)
+            
+            if (_damageInfo.Type == MyDamageType.Fall || _damageInfo.Type == MyDamageType.Environment)
             {
-
+                if (m_ChargeDelayRemainingTicks < 60)
+                    m_ChargeDelayRemainingTicks = 60; // Fall/Environment damage only delay 1 second;
             }
-
-            m_ChargeDelayRemainingTicks = (int)(ChargeDelay * 60.0f); // 60 ticks per second;
+            else
+            {
+                m_ChargeDelayRemainingTicks = (int)(ChargeDelay * 60.0f); // 60 ticks per second;
+            }
 
             if (Energy <= 0.0f)
             {
@@ -421,6 +425,7 @@ namespace PocketShieldCore
         
         public void AddPlugins(ref List<MyStringHash> _newPlugins)
         {
+            m_Logger.WriteLine("Adding Plugins");
             ++PluginChangedCalled;
 
             int count = 0;
@@ -433,6 +438,8 @@ namespace PocketShieldCore
                 ++count;
             }
             _newPlugins.RemoveRange(0, count);
+
+            m_Logger.WriteLine("new = " + m_NewPlugins.Count + "old = " + m_Plugins.Count);
 
             bool isDirty = false;
             if (m_NewPlugins.Count != m_Plugins.Count)
@@ -451,7 +458,7 @@ namespace PocketShieldCore
 
             if (isDirty)
             {
-                m_Logger.WriteInline("> Plugin list changed (" + PluginsCount + " -> " + count + ")");
+                m_Logger.WriteLine("> Plugin list changed (" + PluginsCount + " -> " + count + ")", 4);
                 ++PluginChangedPerformed;
 
                 m_Plugins.Clear();

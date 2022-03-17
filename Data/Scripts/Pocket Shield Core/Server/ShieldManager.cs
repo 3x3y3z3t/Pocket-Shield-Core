@@ -108,8 +108,10 @@ namespace PocketShieldCore
 
         public void Close()
         {
+            m_Logger.WriteLine("> Closing ShieldManager..", 4);
             PluginModifiers = null;
 
+            m_Logger.WriteLine("  Cleaning up " + m_CharacterInfos.Count + " Character Info..", 2);
             foreach (var charInfo in m_CharacterInfos.Values)
             {
                 charInfo.ManualEmitter = null;

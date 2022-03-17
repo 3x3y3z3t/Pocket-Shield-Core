@@ -27,7 +27,7 @@ namespace PocketShieldCore
                     Sync_SendSyncDataToPlayer(player);
                 }
                 else if (player.Character != null &&
-                         //m_ShieldManager.CharacterInfos.ContainsKey(player.Character.EntityId) && 
+                         m_ShieldManager.CharacterInfos.ContainsKey(player.Character.EntityId) &&
                          m_ShieldManager.CharacterInfos[player.Character.EntityId].RequireSync)
                 {
                     m_Logger.WriteLine("Request Sync due to: Shield Updated <" + player.SteamUserId + ">", 3);
@@ -109,6 +109,7 @@ namespace PocketShieldCore
                         OverchargeRemainingPercent = emitter.OverchargeRemainingPercent
                     };
                     emitter.RequireSync = false;
+                    m_Logger.WriteLine("Overcharge Percent = " + emitter.OverchargeRemainingPercent);
                 }
             }
 

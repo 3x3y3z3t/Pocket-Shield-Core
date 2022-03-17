@@ -12,6 +12,7 @@ using VRage.Game.Entity;
 using Sandbox.Game.Entities;
 using VRage.Game;
 using VRage.ObjectBuilders;
+using SpaceEngineers.Game.World;
 
 namespace PocketShieldCore
 {
@@ -36,7 +37,9 @@ namespace PocketShieldCore
         private Dictionary<long, OtherCharacterShieldData> m_ShieldDamageEffects = new Dictionary<long, OtherCharacterShieldData>();
 
         private List<ulong> m_ForceSyncPlayers = new List<ulong>();
-        private List<int> m_DamageQueue = new List<int>();
+
+        private Dictionary<string, IMyCharacter> m_HookedEntities = null;
+
         //private List<long> m_IdToRemove = new List<long>();
 
         //public Session_PocketShieldCoreServer() : base()
@@ -73,6 +76,7 @@ namespace PocketShieldCore
                 (Func<List<object>, bool>)m_ShieldManager.RegisterEmitter
             };
 
+            m_HookedEntities = new Dictionary<string, IMyCharacter>();
 
             m_Inventory_Plugins = new List<MyStringHash>(12); // By design, a Manual Emitter supports 4 and an Auto Emitter supports 8 Plugins;
 
@@ -84,11 +88,9 @@ namespace PocketShieldCore
             MyAPIGateway.Utilities.RegisterMessageHandler(PocketShieldAPIV2.MOD_ID, ApiBackend_ModMessageHandle);
             MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(Constants.SYNC_ID_TO_SERVER, Sync_ReceiveDataFromClient);
 
-            MyAPIGateway.Projectiles.AddOnHitInterceptor(50, Projectiles_OnHitInterceptor);
+            //MyAPIGateway.Projectiles.AddOnHitInterceptor(50, Projectiles_OnHitInterceptor);
 
-
-
-
+            
         }
 
         protected override void UnloadData()
@@ -107,6 +109,10 @@ namespace PocketShieldCore
                 m_Logger.WriteLine(string.Format(">> {0:0}/{1:0} sync operations saved ({2:0.##}%), {3:0}/{4:0} plugin processing operation saved ({5:0.##}%) <<",
                     syncSaved, m_Sync_SyncCalled, syncSaved * 100.0f / m_Sync_SyncCalled,
                     pluginOpSaved, ShieldEmitter.PluginChangedCalled, pluginOpSaved * 100.0f / ShieldEmitter.PluginChangedCalled));
+
+                m_Logger.WriteLine("Released Hooks: " + released + "/" + hooked);
+
+                m_HookedEntities.Clear();
 
                 m_ShieldManager.Close();
                
@@ -176,7 +182,6 @@ namespace PocketShieldCore
                 m_SaveData.Update();
 
 
-
             }
 
             if (m_Ticks % m_Config.ShieldUpdateInterval == 0)
@@ -211,6 +216,8 @@ namespace PocketShieldCore
             m_SaveData.SaveData();
         }
 
+        static int hooked = 0;
+        static int released = 0;
         private void Entities_OnEntityAdd(VRage.ModAPI.IMyEntity _entity)
         {
             m_Logger.WriteLine("New Entity added..", 5);
@@ -218,22 +225,14 @@ namespace PocketShieldCore
             if (character == null)
                 return;
 
-            m_Logger.WriteLine("  Added Character [" + Utils.GetCharacterName(character) + "] (EntitId = " + character.EntityId + ")", 2);
-            m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "]: Hooking character.CharacterDied..", 5);
-            character.CharacterDied += Character_CharacterDied;
-
-            MyInventory inventory = character.GetInventory() as MyInventory;
-            if (inventory == null)
+            if (m_HookedEntities.ContainsKey(character.Name))
             {
-                m_Logger.WriteLine("  Character [" + character.DisplayName + "] doesn't have inventory", 5);
+                m_Logger.WriteLine("  Added back Character [" + Utils.GetCharacterName(character) + "] (EntitId = " + character.EntityId + ") (no new hooks)", 2);
                 return;
             }
 
-            m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "]: Hooking inventory.ContentChanged..", 5);
-            inventory.ContentsChanged += Inventory_ContentsChanged;
-            inventory.BeforeContentsChanged += Inventory_BeforeContentsChanged;
-
-            m_ShieldManager.CharacterInfos[character.EntityId] = new CharacterShieldInfo();
+            m_Logger.WriteLine("  Added Character [" + Utils.GetCharacterName(character) + "] (EntitId = " + character.EntityId + ")", 2);
+            HookEntity(character);
         }
 
         private void Entities_OnEntityRemove(VRage.ModAPI.IMyEntity _entity)
@@ -243,18 +242,19 @@ namespace PocketShieldCore
             if (character == null)
                 return;
 
-            m_Logger.WriteLine("  Entity is Character [" + Utils.GetCharacterName(character) + "]", 5);
-            m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "]: UnHooking character.CharacterDied..", 5);
-            character.CharacterDied -= Character_CharacterDied;
+            if (!m_HookedEntities.ContainsKey(character.Name))
+            {
+                m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "] (EntitId = " + character.EntityId + ") haven't hooked anything (this should not happen)", 1);
+            }
 
-            MyInventory inventory = character.GetInventory() as MyInventory;
-            if (inventory == null)
+            if (MyAPIGateway.Entities.EntityExists(character.Name))
+            {
+                m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "] (EntitId = " + character.EntityId + ") still exists, no unhook", 2);
                 return;
+            }
 
-            m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(character) + "]: UnHooking inventory.ContentChanged..", 5);
-            inventory.ContentsChanged -= Inventory_ContentsChanged;
-
-            m_ShieldManager.CharacterInfos.Remove(character.EntityId);
+            m_Logger.WriteLine("  Removing Character [" + Utils.GetCharacterName(character) + "] (EntitId = " + character.EntityId + ")", 2);
+            UnHookEntity(character);
         }
 
         private void Character_CharacterDied(IMyCharacter _character)
@@ -264,6 +264,8 @@ namespace PocketShieldCore
 
             m_ShieldManager.DropEmitter(_character, true);
             m_ShieldManager.DropEmitter(_character, false);
+
+            m_ShieldManager.CharacterInfos.Remove(_character.EntityId);
 
             ulong playerUid = GetPlayerSteamUid(_character);
             if (playerUid == 0U)
@@ -379,9 +381,6 @@ namespace PocketShieldCore
 
         public void BeforeDamageHandler(object _target, ref MyDamageInformation _damageInfo)
         {
-            if (m_DamageQueue.Contains(_damageInfo.GetHashCode()))
-                return;
-
             //m_Logger.WriteLine("> BeforeDamageHandler is triggered <");
             m_Logger.WriteLine("  Damage Info: " + _damageInfo.Amount + " " + _damageInfo.Type.String + " dmg from [" + _damageInfo.AttackerId + "]", 4);
 
@@ -392,22 +391,22 @@ namespace PocketShieldCore
             if (_damageInfo.IsDeformation)
                 return;
 
-            if (_damageInfo.Type != MyDamageType.Bullet &&
-                _damageInfo.Type != MyDamageType.Explosion &&
-                _damageInfo.Type != MyDamageType.Wolf &&
-                _damageInfo.Type != MyDamageType.Spider)
-            {
-                m_Logger.WriteLine("Damage type: " + _damageInfo.Type.String);
-            }
+            //if (_damageInfo.Type != MyDamageType.Bullet &&
+            //    _damageInfo.Type != MyDamageType.Explosion &&
+            //    _damageInfo.Type != MyDamageType.Wolf &&
+            //    _damageInfo.Type != MyDamageType.Spider)
+            //{
+            //    m_Logger.WriteLine("  Damage type: " + _damageInfo.Type.String + ", amount = " + _damageInfo.Amount);
+            //}
 
             if (GetPlayerSteamUid(character) == 0U)
             {
-                m_Logger.WriteLine("Damage captured: " + _damageInfo.Amount + " " + _damageInfo.Type.String + " damage" +
+                m_Logger.WriteLine("  Damage captured: " + _damageInfo.Amount + " " + _damageInfo.Type.String + " damage" +
                     " - Character [" + Utils.GetCharacterName(character) + "] (EntityId = " + character.EntityId + ")", 4);
             }
             else
             {
-                m_Logger.WriteLine("Damage captured: " + _damageInfo.Amount + " " + _damageInfo.Type.String + " damage" +
+                m_Logger.WriteLine("  Damage captured: " + _damageInfo.Amount + " " + _damageInfo.Type.String + " damage" +
                     " - Character [" + Utils.GetCharacterName(character) + "] (EntityId = " + character.EntityId + ") (Player <" + GetPlayerSteamUid(character) + ">)", 4);
             }
 
@@ -426,8 +425,7 @@ namespace PocketShieldCore
                     // update effect list;
                 }
 
-
-
+                
                 if (_damageInfo.Amount <= 0)
                     return;
             }
@@ -460,44 +458,52 @@ namespace PocketShieldCore
 
 
                 }
-
-
-
-
-
+                
                 if (_damageInfo.Amount <= 0)
                     return;
             }
 
+            
+        }
 
+        private void HookEntity(IMyCharacter _character)
+        {
+            m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(_character) + "]: Hooking character.CharacterDied..", 5);
+            _character.CharacterDied += Character_CharacterDied;
 
-            //m_Logger.WriteLine("  Trying passing damage through Shield Emitter..", 4);
-            //ShieldEmitter emitter = m_ShieldEmitters[character.EntityId];
-            //float beforeDamageHealth = MyVisualScriptLogicProvider.GetPlayersHealth(character.ControllerInfo.ControllingIdentityId);
-            //if (emitter.TakeDamage(ref _damageInfo))
-            //{
-            //    if (m_ShieldDamageEffects.ContainsKey(character.EntityId))
-            //    {
-            //        m_ShieldDamageEffects[character.EntityId].Ticks = m_Ticks;
-            //        m_ShieldDamageEffects[character.EntityId].ShieldAmountPercent = emitter.ShieldEnergyPercent;
-            //    }
-            //    else
-            //    {
-            //        m_ShieldDamageEffects[character.EntityId] = new OtherCharacterShieldData()
-            //        {
-            //            Entity = character,
-            //            EntityId = character.EntityId,
-            //            Ticks = m_Ticks,
-            //            ShieldAmountPercent = emitter.ShieldEnergyPercent
-            //        };
-            //    }
-            //}
+            MyInventory inventory = _character.GetInventory() as MyInventory;
+            if (inventory == null)
+            {
+                m_Logger.WriteLine("  Character [" + _character.DisplayName + "] doesn't have inventory", 5);
+                return;
+            }
 
-            //m_DamageQueue.Add(_damageInfo.GetHashCode());
-            //bool shouldSync = _damageInfo.Amount > 0.0f;
-            //character.DoDamage(_damageInfo.Amount, _damageInfo.Type, shouldSync, attackerId: _damageInfo.AttackerId);
-            //_damageInfo.Amount = 0;
-            //m_DamageQueue.Remove(_damageInfo.GetHashCode());
+            m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(_character) + "]: Hooking inventory.ContentChanged..", 5);
+            inventory.ContentsChanged += Inventory_ContentsChanged;
+            inventory.BeforeContentsChanged += Inventory_BeforeContentsChanged;
+
+            ++hooked;
+            m_HookedEntities.Add(_character.Name, _character);
+
+            m_ShieldManager.CharacterInfos[_character.EntityId] = new CharacterShieldInfo();
+            m_Logger.WriteLine("Added character " + _character.EntityId);
+        }
+
+        private void UnHookEntity(IMyCharacter _character)
+        {
+            m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(_character) + "]: UnHooking character.CharacterDied..", 5);
+            _character.CharacterDied -= Character_CharacterDied;
+
+            MyInventory inventory = _character.GetInventory() as MyInventory;
+            if (inventory == null)
+                return;
+
+            m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(_character) + "]: UnHooking inventory.ContentChanged..", 5);
+            inventory.ContentsChanged -= Inventory_ContentsChanged;
+            inventory.BeforeContentsChanged -= Inventory_BeforeContentsChanged;
+
+            ++released;
+            m_HookedEntities.Remove(_character.Name);
         }
 
         private void UpdatePlayersCacheLists()

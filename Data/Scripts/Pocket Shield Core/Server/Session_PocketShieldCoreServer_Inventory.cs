@@ -1,5 +1,6 @@
 ﻿// ;
 using Sandbox.Game;
+using Sandbox.ModAPI;
 using System.Collections.Generic;
 using VRage.Game;
 using VRage.Game.Entity;
@@ -105,7 +106,6 @@ namespace PocketShieldCore
                             m_Logger.WriteLine("    Accepted Manual Emitter " + subtypeId, 4);
                             m_Inventory_ManualEmitterItems = subtypeId;
                             manualInd = i;
-                            m_Logger.WriteLine("i = " + i);
                         }
                     }
                     else
@@ -115,7 +115,6 @@ namespace PocketShieldCore
                             m_Logger.WriteLine("    Accepted Auto Emitter " + subtypeId, 4);
                             m_Inventory_AutoEmitterItems = subtypeId;
                             autoInd = i;
-                            m_Logger.WriteLine("i = " + i);
                         }
                     }
                 }
@@ -309,11 +308,24 @@ namespace PocketShieldCore
 
         private void Inventory_UpdatePlayerCharacterInventoryOnceBeforeSim()
         {
-            m_Logger.WriteLine(">> UpdatePlayerCharacterInventoryOnceBeforeSim()..", 4);
-            UpdatePlayersCacheLists();
+            m_Logger.WriteLine("> UpdatePlayerCharacterInventoryOnceBeforeSim()..", 4);
+            //UpdatePlayersCacheLists();
+            MyAPIGateway.Players.GetPlayers(m_CachedPlayers);
             foreach (IMyPlayer player in m_CachedPlayers)
             {
-                m_Logger.WriteLine(">>   Updating player " + player.SteamUserId, 4);
+                if (player.Character == null)
+                    continue;
+
+                if (!m_HookedEntities.ContainsKey(player.Character.Name))
+                    HookEntity(player.Character);
+
+                //if (!m_ShieldManager.CharacterInfos.ContainsKey(player.Character.EntityId))
+                //{
+                //    m_Logger.WriteLine("  Character [" + Utils.GetCharacterName(player.Character) + "] is not registered with ShieldManager yet (maybe character is in seat?)", 2);
+                //    m_ShieldManager.CharacterInfos[player.Character.EntityId] = new CharacterShieldInfo();
+                //}
+
+                m_Logger.WriteLine(">   Updating player " + player.SteamUserId, 4);
                 if (player.Character == null || !player.Character.HasInventory)
                     continue;
 
@@ -322,7 +334,7 @@ namespace PocketShieldCore
                     continue;
 
                 Inventory_RefreshInventory(inventory);
-                m_Logger.WriteLine(">>     Player Character Inventory updated", 4);
+                m_Logger.WriteLine(">     Player Character Inventory updated", 4);
             }
         }
 
