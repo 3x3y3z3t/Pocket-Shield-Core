@@ -109,7 +109,6 @@ namespace PocketShieldCore
                         OverchargeRemainingPercent = emitter.OverchargeRemainingPercent
                     };
                     emitter.RequireSync = false;
-                    m_Logger.WriteLine("Overcharge Percent = " + emitter.OverchargeRemainingPercent);
                 }
             }
 

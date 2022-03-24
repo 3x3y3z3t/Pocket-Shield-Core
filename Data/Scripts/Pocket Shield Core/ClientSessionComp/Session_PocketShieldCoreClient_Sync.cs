@@ -49,6 +49,7 @@ namespace PocketShieldCore
                 m_Logger.WriteLine("  Shield Data updated", 4);
 
                 m_ShieldHudPanel?.UpdatePanel();
+                m_ShieldHudPanel?.UpdatePanelVisibility();
             }
             catch (Exception _e)
             {
@@ -69,7 +70,7 @@ namespace PocketShieldCore
                 m_ManualShieldData.Energy = _data.Energy;
                 m_ManualShieldData.MaxEnergy = _data.MaxEnergy;
                 m_ManualShieldData.OverchargeRemainingPercent = _data.OverchargeRemainingPercent;
-                
+
             }
             else
             {
